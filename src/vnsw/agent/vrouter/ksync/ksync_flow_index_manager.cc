@@ -10,11 +10,13 @@
 #include "ksync_init.h"
 
 #define INDEX_LOCK(idx) \
-    tbb::mutex *mutex_ptr;\
-        if (idx == FlowEntry::kInvalidFlowHandle)\
-            tbb::mutex::scoped_lock lock(*mutex_ptr);\
-        else\
-            tbb::mutex::scoped_lock lock(&index_list_[idx].mutex_);
+    tbb::mutex tmp_mutex, *mutex_ptr;\
+    if (idx == FlowEntry::kInvalidFlowHandle) {\
+        mutex_ptr = &tmp_mutex;\
+    } else {\
+        mutex_ptr = &index_list_[idx].mutex_;\
+    }\
+    tbb::mutex::scoped_lock lock(*mutex_ptr);
 
 //////////////////////////////////////////////////////////////////////////////
 // KSyncFlowIndexManager routines
