@@ -17,7 +17,10 @@ from netaddr import IPNetwork, IPSet, IPAddress
 import gevent
 import bottle
 
-from neutron.common import constants
+try:
+    from neutron_lib import constants
+except ImportError:
+    from neutron.common import constants
 
 from cfgm_common import exceptions as vnc_exc
 from vnc_api.vnc_api import *
