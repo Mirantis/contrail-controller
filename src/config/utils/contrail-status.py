@@ -377,13 +377,6 @@ def supervisor_status(nodetype, options):
         print ""
         print "== Contrail Supervisor Database =="
         check_status('supervisor-database', options)
-    elif nodetype == 'webui':
-        print "== Contrail Web UI =="
-        check_status('supervisor-webui', options)
-    elif nodetype == 'support-service' and \
-         distribution == 'debian':
-        print "== Contrail Support Services =="
-        check_status('supervisor-support-service', options)
 
 def package_installed(pkg):
     if distribution == 'debian':
