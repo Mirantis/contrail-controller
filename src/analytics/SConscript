@@ -127,6 +127,7 @@ if sys.platform != 'darwin':
                          ['-Wl,--whole-archive',
                           '-lbase', '-lcpuinfo',
                           '-lprocess_info', '-lnodeinfo',
+                          '-lsasl2', '-lssl', '-lcrypto', '-lrt',
                           '-l:librdkafka.a', '-l:librdkafka++.a',
                           '-Wl,--no-whole-archive'])
 else:
