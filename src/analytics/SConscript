@@ -55,6 +55,9 @@ AnalyticsEnv.Prepend(LIBS=['cpuinfo',
         'sandeshvns',
         'pugixml',
         'hiredis',
+        'ssl',
+        'crypto',
+        'sasl2',
         'protobuf',
         'zookeeper_client',
         'zookeeper_mt',
@@ -62,10 +65,6 @@ AnalyticsEnv.Prepend(LIBS=['cpuinfo',
         'crypto',
         'boost_filesystem',
         'boost_program_options'])
-
-(PLATFORM, VERSION, EXTRA) = platform.linux_distribution()
-if PLATFORM.lower() != 'ubuntu':
-    AnalyticsEnv.Prepend(LIBS=['sasl2'])
 
 database_libs = ['cassandra_cql', 'cassandra']
 
@@ -127,7 +126,6 @@ if sys.platform != 'darwin':
                          ['-Wl,--whole-archive',
                           '-lbase', '-lcpuinfo',
                           '-lprocess_info', '-lnodeinfo',
-                          '-lsasl2', '-lssl', '-lcrypto', '-lrt',
                           '-l:librdkafka.a', '-l:librdkafka++.a',
                           '-Wl,--no-whole-archive'])
 else:
