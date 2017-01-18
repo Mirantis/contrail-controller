@@ -666,7 +666,7 @@ int VnTable::ComputeCfgVxlanId(IFMapNode *node) {
 void VnTable::CfgForwardingFlags(IFMapNode *node, bool *l2, bool *l3,
                                  bool *rpf, bool *flood_unknown_unicast,
                                  Agent::ForwardingMode *forwarding_mode) {
-    *rpf = true;
+    *rpf = false;
 
     VirtualNetwork *cfg = static_cast <VirtualNetwork *> (node->GetObject());
     autogen::VirtualNetworkType properties = cfg->properties();
