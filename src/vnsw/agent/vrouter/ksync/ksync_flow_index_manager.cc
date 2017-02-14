@@ -26,20 +26,14 @@ KSyncFlowIndexManager::KSyncFlowIndexManager(KSync *ksync) :
 }
 
 KSyncFlowIndexManager::~KSyncFlowIndexManager() {
+    if (count_ > 0)
+        delete [] index_list_;
 }
 
 void KSyncFlowIndexManager::InitDone(uint32_t count) {
     proto_ = ksync_->agent()->pkt()->get_flow_proto();
     count_ = count;
-//    index_list_.resize(count);
-    for (uint32_t i=0; i < count; i++)
-        if (index_list_.size() < count) {
-            struct IndexEntry *idx = (struct IndexEntry *)malloc(sizeof(struct IndexEntry));
-            index_list_.push_back(*idx);
-        } else {
-            index_list_.pop_back();
-        }
-
+    index_list_ = new struct IndexEntry[count_];
     sm_log_count_ = ksync_->agent()->params()->flow_index_sm_log_count();
 }
 
