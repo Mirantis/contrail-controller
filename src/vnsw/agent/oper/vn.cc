@@ -671,8 +671,8 @@ void VnTable::CfgForwardingFlags(IFMapNode *node, bool *l2, bool *l3,
     VirtualNetwork *cfg = static_cast <VirtualNetwork *> (node->GetObject());
     autogen::VirtualNetworkType properties = cfg->properties();
 
-    if (properties.rpf == "disable") {
-        *rpf = false;
+    if (properties.rpf != "disable") {
+        *rpf = true;
     }
 
     *flood_unknown_unicast = cfg->flood_unknown_unicast();

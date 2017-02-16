@@ -194,7 +194,7 @@ void FlowMgmtDbClient::VnNotify(DBTablePartBase *part, DBEntryBase *e) {
     const AclDBEntry *new_acl = vn->GetAcl();
     const AclDBEntry *new_macl = vn->GetMirrorAcl();
     const AclDBEntry *new_mcacl = vn->GetMirrorCfgAcl();
-    bool new_enable_rpf = false;
+    bool new_enable_rpf = vn->enable_rpf();
     bool new_flood_unknown_unicast = vn->flood_unknown_unicast();
     
     if (state == NULL) {
