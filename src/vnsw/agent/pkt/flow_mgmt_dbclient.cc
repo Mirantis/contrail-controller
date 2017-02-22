@@ -172,7 +172,7 @@ void FlowMgmtDbClient::VnNotify(DBTablePartBase *part, DBEntryBase *e) {
     AclDBEntryConstRef acl = NULL;
     AclDBEntryConstRef macl = NULL;
     AclDBEntryConstRef mcacl = NULL;
-    bool enable_rpf = true;
+    bool enable_rpf = false;
     bool flood_unknown_unicast = false;
 
     if (vn->IsDeleted()) {

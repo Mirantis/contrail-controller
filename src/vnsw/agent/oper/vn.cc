@@ -90,7 +90,7 @@ bool VnIpam::IsSubnetMember(const IpAddress &ip) const {
 VnEntry::VnEntry(Agent *agent, uuid id) :
     AgentOperDBEntry(), agent_(agent), uuid_(id), vrf_(NULL, this),
     vxlan_id_(0), vnid_(0), bridging_(true), layer3_forwarding_(true),
-    admin_state_(true), table_label_(0), enable_rpf_(true),
+    admin_state_(true), table_label_(0), enable_rpf_(false),
     flood_unknown_unicast_(false), old_vxlan_id_(0),
     forwarding_mode_(Agent::L2_L3),
     route_resync_walker_(new AgentRouteResync(agent)) {
@@ -666,13 +666,13 @@ int VnTable::ComputeCfgVxlanId(IFMapNode *node) {
 void VnTable::CfgForwardingFlags(IFMapNode *node, bool *l2, bool *l3,
                                  bool *rpf, bool *flood_unknown_unicast,
                                  Agent::ForwardingMode *forwarding_mode) {
-    *rpf = true;
+    *rpf = false;
 
     VirtualNetwork *cfg = static_cast <VirtualNetwork *> (node->GetObject());
     autogen::VirtualNetworkType properties = cfg->properties();
 
-    if (properties.rpf == "disable") {
-        *rpf = false;
+    if (properties.rpf != "disable") {
+        *rpf = true;
     }
 
     *flood_unknown_unicast = cfg->flood_unknown_unicast();
