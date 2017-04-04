@@ -47,6 +47,8 @@ utils_scripts = [
   'provision_config_node.py',
   'discovery_cli.py',
   'provision_user_defined_log_statistics.py',
+  'service_appliance.py',
+  'service_appliance_set.py',
   'contrail-diff-docs.py',
 ]
 
