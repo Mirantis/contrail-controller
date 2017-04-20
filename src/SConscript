@@ -16,7 +16,6 @@ subdirs = [
            'bgp',
            'config',
            'control-node',
-           'container',
            'db',
            'discovery',
            'dns',
