@@ -50,6 +50,7 @@ utils_scripts = [
   'service_appliance.py',
   'service_appliance_set.py',
   'contrail-diff-docs.py',
+  'rbacutil.py',
 ]
 
 for utils in utils_scripts:
