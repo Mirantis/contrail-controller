@@ -4,7 +4,12 @@ After=syslog.target network.target
 
 [Service]
 Restart=always
+ExecStartPre=/usr/lib/contrail/vrouter-pre-start.sh
 ExecStart=/usr/bin/supervisord -n -c /etc/contrail/supervisord_vrouter.conf
+ExecStartPost=/usr/lib/contrail/vrouter-post-start.sh
+ExecStopPre=/usr/bin/supervisorctl -s unix:///var/run/supervisord_vrouter.sock stop all
+ExecStopPost=/usr/bin/supervisor_killall /etc/contrail/supervisord_vrouter_files
+ExecStopPost=/usr/lib/contrail/vrouter-post-stop.sh
 LimitCORE=infinity
 LimitNOFILE=4096
 LimitSTACK=infinity
