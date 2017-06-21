@@ -56,10 +56,10 @@ AnalyticsEnv.Prepend(LIBS=['cpuinfo',
         'protobuf',
         'zookeeper_client',
         'zookeeper_mt',
-        'boost_filesystem',
-        'boost_program_options',
         'ssl',
         'crypto',
+        'boost_filesystem',
+        'boost_program_options',
         'sasl2'])
 
 (PLATFORM, VERSION, EXTRA) = platform.linux_distribution()

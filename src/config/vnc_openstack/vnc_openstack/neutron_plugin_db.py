@@ -115,12 +115,15 @@ class DBInterface(object):
             request.body, {'Content-type': request.environ['CONTENT_TYPE']})
     #end _relay_request
 
-    def _validate_project_ids(self, context, project_ids):
+    def _validate_project_ids(self, context=None, filters=None):
         if context and not context['is_admin']:
             return [str(uuid.UUID(context['tenant']))]
 
+        if not filters.get('tenant_id'):
+            return None
+
         return_project_ids = []
-        for project_id in project_ids:
+        for project_id in filters.get('tenant_id'):
             try:
                 return_project_ids.append(str(uuid.UUID(project_id)))
             except ValueError:
@@ -700,7 +703,7 @@ class DBInterface(object):
         memo_req['virtual-machines'] = dict((vm_obj.uuid, vm_obj) for vm_obj in vm_objs)
 
         # Read only SIs associated with vm_objs
-        si_ids = [si_ref['uuid'] 
+        si_ids = [si_ref['uuid']
                     for vm_obj in vm_objs
                     for si_ref in vm_obj.get_service_instance_refs() or []]
         if si_ids:
@@ -2453,8 +2456,7 @@ class DBInterface(object):
                 _collect_without_prune(filters['id'])
             else:
                 # read all networks in project, and prune below
-                proj_ids = self._validate_project_ids(context, filters['tenant_id'])
-                for p_id in proj_ids:
+                for p_id in self._validate_project_ids(context, filters) or []:
                     all_net_objs.extend(self._network_list_project(p_id))
                 if 'router:external' in filters:
                     all_net_objs.extend(self._network_list_router_external())
@@ -2882,9 +2884,7 @@ class DBInterface(object):
         # collect phase
         all_ipams = []  # all ipams in all projects
         if filters and 'tenant_id' in filters:
-            project_ids = self._validate_project_ids(context,
-                                                     filters['tenant_id'])
-            for p_id in project_ids:
+            for p_id in self._validate_project_ids(context, filters) or []:
                 project_ipams = self._ipam_list_project(p_id)
                 all_ipams.append(project_ipams)
         else:  # no filters
@@ -2972,9 +2972,7 @@ class DBInterface(object):
         # collect phase
         all_policys = []  # all policys in all projects
         if filters and 'tenant_id' in filters:
-            project_ids = self._validate_project_ids(context,
-                                                     filters['tenant_id'])
-            for p_id in project_ids:
+            for p_id in self._validate_project_ids(context, filters) or []:
                 project_policys = self._policy_list_project(p_id)
                 all_policys.append(project_policys)
         else:  # no filters
@@ -3132,9 +3130,7 @@ class DBInterface(object):
                         pass
             else:
                 # read all routers in project, and prune below
-                project_ids = self._validate_project_ids(context,
-                                                         filters['tenant_id'])
-                for p_id in project_ids:
+                for p_id in self._validate_project_ids(context, filters) or []:
                     if 'router:external' in filters:
                         all_rtrs.append(self._fip_pool_ref_routers(p_id))
                     else:
@@ -3412,9 +3408,8 @@ class DBInterface(object):
             if 'id' in filters:
                 fip_ids = [str(uuid.UUID(fid)) for fid in filters['id']]
             if 'tenant_id' in filters:
-                backref_ids = self._validate_project_ids(context,
-                                                         filters['tenant_id'])
-                proj_ids = backref_ids
+                backref_ids = self._validate_project_ids(context, filters)
+                proj_ids = backref_ids or []
             if 'port_id' in filters:
                 port_ids = [str(uuid.UUID(pid)) for pid in filters['port_id']]
                 if len(port_ids) > 0:
@@ -3754,95 +3749,80 @@ class DBInterface(object):
 
     @wait_for_api_server_connection
     def port_list(self, context=None, filters=None):
-        project_obj = None
-        ret_q_ports = []
-        all_project_ids = []
         if not context:
             context = {'is_admin': True}
 
-        # TODO used to find dhcp server field. support later...
         if (filters.get('device_owner') == 'network:dhcp' or
             'network:dhcp' in filters.get('device_owner', [])):
-             return ret_q_ports
+             return []
 
-        if not context['is_admin']:
-            project_id = str(uuid.UUID(context['tenant']))
-        else:
-            project_id = None
+        project_ids = self._validate_project_ids(context, filters)
 
-        if not 'device_id' in filters:
-            # Listing from back references
-            # TODO once vmi is linked to project in schema, use project_id
-            # to limit scope of list
-            if 'tenant_id' in filters:
-                all_project_ids = self._validate_project_ids(context,
-                                                             filters['tenant_id'])
-            elif 'name' in filters or 'device_owner' in filters:
-                all_project_ids = [str(uuid.UUID(context['tenant']))]
-            elif 'id' in filters:
-                # TODO optimize
-                for port_id in filters['id']:
-                    try:
-                        port_info = self.port_read(port_id)
-                    except NoIdError:
-                        continue
-                    ret_q_ports.append(port_info)
-            elif 'network_id' in filters:
-                ret_q_ports = self._port_list_network(filters['network_id'])
+        port_objs = []
+        if filters.get('device_id'):
+            # Get all VM port
+            port_objs_filtered_by_device_id =\
+                self._virtual_machine_interface_list(
+                    obj_uuids=filters.get('id'),
+                    back_ref_id=filters.get('device_id'))
+
+            # If some device ids not yet found look to router interfaces
+            found_device_ids = set(
+                vm_ref['uuid']
+                for vmi_obj in port_objs_filtered_by_device_id
+                for vm_ref in vmi_obj.get_virtual_machine_refs() or [])
+            not_found_device_ids = set(filters.get('device_id')) -\
+                                   found_device_ids
+            if not_found_device_ids:
+                # Port has a back_ref to logical router, so need to read in
+                # logical routers based on device ids
+                router_objs = self._logical_router_list(
+                    obj_uuids=list(not_found_device_ids),
+                    parent_id=project_ids,
+                    fields=['virtual_machine_interface_back_refs'])
+                router_port_ids = [
+                    vmi_ref['uuid']
+                    for router_obj in router_objs
+                    for vmi_ref in
+                    router_obj.get_virtual_machine_interface_refs() or []
+                ]
+                # Read all logical router ports and add it to the list
+                if router_port_ids:
+                    port_objs.extend(self._virtual_machine_interface_list(
+                                         obj_uuids=router_port_ids,
+                                         parent_id=project_ids))
+
+            # Filter it with project ids if there are.
+            if project_ids:
+                port_objs.extend([p for p in port_objs_filtered_by_device_id
+                                  if p.parent_uuid in project_ids])
             else:
-                ret_q_ports = self._port_list_project(project_id,
-                                                  is_admin=context['is_admin'])
+                port_objs.extend(port_objs_filtered_by_device_id)
+        else:
+            port_objs = self._virtual_machine_interface_list(
+                obj_uuids=filters.get('id'),
+                parent_id=project_ids)
 
-            if all_project_ids:
-                ret_q_ports = []
-                for proj_id in all_project_ids:
-                    # Get data from filter tenant-ids
-                    ret_q_ports.extend(self._port_list_project(proj_id))
+        neutron_ports = self._port_list(port_objs)
 
-            # prune phase
-            ret_list = []
-            for port_obj in ret_q_ports:
-                if not self._filters_is_present(filters, 'name',
-                                                port_obj['name']):
-                    continue
-                if not self._filters_is_present(filters, 'device_owner',
-                                                port_obj["device_owner"]):
-                    continue
-                if ('fixed_ips' in filters and
-                    not self._port_fixed_ips_is_present(filters['fixed_ips'],
-                                                        port_obj['fixed_ips'])):
-                    continue
-                if not self._filters_is_present(filters,'network_id',
-                                                port_obj['network_id']):
-                    continue
+        ret_list = []
+        for neutron_port in neutron_ports:
+            if not self._filters_is_present(filters, 'name',
+                                            neutron_port['name']):
+                continue
+            if not self._filters_is_present(filters, 'device_owner',
+                                            neutron_port["device_owner"]):
+                continue
+            if ('fixed_ips' in filters and
+                not self._port_fixed_ips_is_present(filters['fixed_ips'],
+                                                    neutron_port['fixed_ips'])):
+                continue
+            if not self._filters_is_present(filters,'network_id',
+                                            neutron_port['network_id']):
+                continue
 
-                ret_list.append(port_obj)
-            return ret_list
-
-        # Listing from parent to children
-
-        # port has a back_ref to LR, so need to read in LRs based on device id
-        device_ids = filters['device_id']
-        router_objs = self._logical_router_list(obj_uuids=device_ids)
-        more_ports = []
-        for router_obj in router_objs:
-            intfs = router_obj.get_virtual_machine_interface_refs()
-            for intf in (intfs or []):
-                more_ports.append(intf['uuid'])
-
-        # gather all ports from an anchor of virtual-machine (backref in
-        # current schema and parent in < 1.06 schema)
-        port_objs = self._virtual_machine_interface_list(parent_id=device_ids,
-                                                    back_ref_id=device_ids)
-
-        if len(more_ports):
-            rtr_port_objs = self._virtual_machine_interface_list(obj_uuids=more_ports)
-            port_objs.extend(rtr_port_objs)
-
-        ret_q_ports = self._port_list(port_objs)
-
-        return ret_q_ports
-    #end port_list
+            ret_list.append(neutron_port)
+        return ret_list
 
     @wait_for_api_server_connection
     def port_count(self, filters=None):
@@ -3971,9 +3951,7 @@ class DBInterface(object):
             all_sgs.append(project_sgs)
         else: # admin context
             if filters and 'tenant_id' in filters:
-                project_ids = self._validate_project_ids(context,
-                                                         filters['tenant_id'])
-                for p_id in project_ids:
+                for p_id in self._validate_project_ids(context, filters) or []:
                     project_sgs = self._security_group_list_project(p_id, filters)
                     all_sgs.append(project_sgs)
             else:  # no tenant_id filter
@@ -4095,9 +4073,7 @@ class DBInterface(object):
         # collect phase
         all_sgs = []
         if filters and 'tenant_id' in filters:
-            project_ids = self._validate_project_ids(context,
-                                                     filters['tenant_id'])
-            for p_id in project_ids:
+            for p_id in self._validate_project_ids(context, filters) or []:
                 project_sgs = self._security_group_list_project(p_id, filters)
                 all_sgs.append(project_sgs)
         else:  # no filters
@@ -4167,9 +4143,7 @@ class DBInterface(object):
         # collect phase
         all_rts = []  # all rts in all projects
         if filters and 'tenant_id' in filters:
-            project_ids = self._validate_project_ids(context,
-                                                     filters['tenant_id'])
-            for p_id in project_ids:
+            for p_id in self._validate_project_ids(context, filters) or []:
                 project_rts = self._route_table_list_project(p_id)
                 all_rts.append(project_rts)
         elif filters and 'name' in filters:
@@ -4237,9 +4211,7 @@ class DBInterface(object):
         # collect phase
         all_sis = []  # all sis in all projects
         if filters and 'tenant_id' in filters:
-            project_ids = self._validate_project_ids(context,
-                                                     filters['tenant_id'])
-            for p_id in project_ids:
+            for p_id in self._validate_project_ids(context, filters) or []:
                 project_sis = self._svc_instance_list_project(p_id)
                 all_sis.append(project_sis)
         elif filters and 'name' in filters:
