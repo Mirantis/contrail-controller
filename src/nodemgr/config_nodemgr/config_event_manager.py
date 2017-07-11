@@ -99,8 +99,8 @@ class ConfigEventManager(EventManager):
             fail_status_bits, ProcessStateNames, ProcessState)
 
     def do_periodic_events(self):
-        db = package_installed('contrail-opesntack-database')
-        config_db = package_installed('contrail-database-common')
+        db = package_installed('contrail-openstack-database')
+        config_db = package_installed('contrail-database')
         if not db and config_db:
             # Record cluster status and shut down cassandra if needed
             self.cassandra_mgr.status()

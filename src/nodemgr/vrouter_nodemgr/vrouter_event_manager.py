@@ -150,4 +150,4 @@ class VrouterEventManager(EventManager):
             self.listener_nodemgr.ok(self.stdout)
 
     def get_package_name(self):
-        return self.node_type + '-common'
+        return self.node_type + '-agent'
