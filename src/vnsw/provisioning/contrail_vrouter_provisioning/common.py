@@ -571,7 +571,9 @@ class CommonComputeSetup(ContrailSetup, ComputeNetworkSetup):
                     'introspect_ssl_enable':
                         self._args.introspect_ssl_enable},
                 'FLOWS': {
-                    'thread_count': flow_thread_count}
+                    'thread_count': flow_thread_count},
+                'METADATA': {
+                    'metadata_proxy_secret': self._args.metadata_secret},
             }
 
             # VGW configs
@@ -603,10 +605,6 @@ class CommonComputeSetup(ContrailSetup, ComputeNetworkSetup):
                                                  'ip_blocks': ip_blocks,
                                                  'routes': routes,
                                                  'routing_instance': vgw_public_vn_name[i]}
-
-            if self._args.metadata_secret:
-                configs['METADATA'] = {
-                    'metadata_proxy_secret': self._args.metadata_secret}
 
             for section, key_vals in configs.items():
                 for key, val in key_vals.items():
@@ -705,7 +703,7 @@ SUBCHANNELS=1,2,3
                 local("sudo sync", warn_only=True)
                 # make ifcfg-$dev
                 ifcfg = "/etc/sysconfig/network-scripts/ifcfg-%s" % self.dev
-                ifcfg_bkp = "/etc/sysconfig/network-scripts/ifcfg-%s.rpmsave"\
+                ifcfg_bkp = "/etc/sysconfig/network-scripts/orig.ifcfg-%s.rpmsave"\
                             % self.dev
                 if not os.path.isfile(ifcfg_bkp):
                     local("sudo cp %s %s" % (ifcfg, ifcfg_bkp), warn_only=True)
@@ -866,7 +864,7 @@ SUBCHANNELS=1,2,3
     def disable_nova_compute(self):
         # Check if nova-compute is allready running
         # Stop if running on TSN node
-        if local("sudo service nova-compute status | grep running").succeeded:
+        if local("sudo service nova-compute status | grep running", warn_only=True).succeeded:
             # Stop the service
             local("sudo service nova-compute stop", warn_only=True)
             if self.pdist in ['Ubuntu']:

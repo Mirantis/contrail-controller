@@ -93,7 +93,7 @@ bool VmInterface::NeedDevice() const {
     if (device_type_ == VM_VLAN_ON_VMI)
         ret = false;
 
-    if (subnet_.is_unspecified() == false) {
+    if (vmi_type_ != VHOST && subnet_.is_unspecified() == false) {
         ret = false;
     }
 
@@ -160,11 +160,18 @@ bool VmInterface::IsActive()  const {
             return false;
     }
 
-    if ((vn_.get() == NULL) || (vrf_.get() == NULL)) {
+    if (vmi_type_ == VHOST) {
+        //In case of vhost interface, upon interface
+        //addition we dont have corresponding VN, hence
+        //ignore VN name check for ip active
+        if (vrf_.get() == NULL) {
+            return false;
+        }
+    } else if ((vn_.get() == NULL) || (vrf_.get() == NULL)) {
         return false;
     }
 
-    if (!vn_.get()->admin_state()) {
+    if (vn_.get() && !vn_.get()->admin_state()) {
         return false;
     }
 
@@ -208,6 +215,10 @@ bool VmInterface::IsMetaDataL2Active() const {
 }
 
 bool VmInterface::IsIpv4Active() const {
+    if (vmi_type_ == VHOST) {
+        return IsActive();
+    }
+
     if (!layer3_forwarding()) {
         return false;
     }
@@ -228,6 +239,10 @@ bool VmInterface::IsIpv4Active() const {
 }
 
 bool VmInterface::IsIpv6Active() const {
+    if (vmi_type_ == VHOST) {
+        return IsActive();
+    }
+
     if (!layer3_forwarding() || (primary_ip6_addr_.is_unspecified())) {
         return false;
     }
@@ -240,6 +255,10 @@ bool VmInterface::IsIpv6Active() const {
 }
 
 bool VmInterface::IsL2Active() const {
+    if (vmi_type_ == VHOST) {
+        return IsActive();
+    }
+
     if (!bridging()) {
         return false;
     }
@@ -411,10 +430,15 @@ void VmInterface::AddL2InterfaceRoute(const IpAddress &ip,
         label = GetPbbLabel();
     }
 
+    std::string vn_name = Agent::NullString();
+    if (vn() != NULL) {
+        vn_name = vn()->GetName();
+    }
+
     table->AddLocalVmRoute(peer_.get(), vrf_->GetName(), mac, this, ip,
-                           label, vn_->GetName(), sg_id_list,
+                           label, vn_name, sg_id_list,
                            tag_list, path_preference,
-                           ethernet_tag_, etree_leaf_);
+                           ethernet_tag_, etree_leaf_, name_);
 }
 
 // Delete EVPN route
@@ -456,7 +480,8 @@ void VmInterface::AddRoute(const std::string &vrf_name, const IpAddress &addr,
     InetUnicastAgentRouteTable::AddLocalVmRoute
         (peer_.get(), vrf_name, addr, plen, GetUuid(), vn_list, label,
          sg_id_list, tag_list, communities, force_policy, path_preference,
-         service_ip, ecmp_load_balance, is_local, is_health_check_service);
+         service_ip, ecmp_load_balance, is_local, is_health_check_service,
+         name_);
     return;
 }
 
@@ -690,13 +715,13 @@ VrfEntry *VmInterface::GetAliasIpVrf(const IpAddress &ip) const {
     return NULL;
 }
 
-void VmInterface::InsertHealthCheckInstance(HealthCheckInstance *hc_inst) {
+void VmInterface::InsertHealthCheckInstance(HealthCheckInstanceBase *hc_inst) {
     std::pair<HealthCheckInstanceSet::iterator, bool> ret;
     ret = hc_instance_set_.insert(hc_inst);
     assert(ret.second);
 }
 
-void VmInterface::DeleteHealthCheckInstance(HealthCheckInstance *hc_inst) {
+void VmInterface::DeleteHealthCheckInstance(HealthCheckInstanceBase *hc_inst) {
     std::size_t ret = hc_instance_set_.erase(hc_inst);
     assert(ret != 0);
 }
@@ -713,12 +738,12 @@ bool VmInterface::IsHealthCheckEnabled() const {
 // Match the Health-Check instance for a packet from VM-Interface
 // A packet from vmi is assumed to be response for health-check request from
 // vhost0
-const HealthCheckInstance *VmInterface::GetHealthCheckFromVmiFlow
+const HealthCheckInstanceBase *VmInterface::GetHealthCheckFromVmiFlow
 (const IpAddress &sip, const IpAddress &dip, uint8_t proto,
  uint16_t sport) const {
     HealthCheckInstanceSet::const_iterator it = hc_instance_set_.begin();
     while (it != hc_instance_set_.end()) {
-        const HealthCheckInstance *hc_instance = *it;
+        const HealthCheckInstanceBase *hc_instance = *it;
         it++;
 
         // Match ip-proto and health-check port
@@ -915,6 +940,16 @@ bool VmInterface::CopyIpAddress(Ip4Address &addr) {
     }
 
     return ret;
+}
+
+VmInterface * VmInterface::PortTuplePairedInterface() const {
+    if (si_other_end_vmi_ == nil_uuid()) {
+        return NULL;
+    }
+    InterfaceTable *table = static_cast<InterfaceTable *>(get_table());
+    VmInterfaceKey key(AgentKey::ADD_DEL_CHANGE, si_other_end_vmi_, "");
+    VmInterface *intf = static_cast<VmInterface *>(table->Find(&key, false));
+    return intf;
 }
 
 void VmInterface::SendTrace(const AgentDBTable *table, Trace event) const {

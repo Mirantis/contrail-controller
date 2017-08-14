@@ -311,6 +311,11 @@ struct ItfSandeshData {
    61: list<string> policy_set_acl_list;
    /** List of security-logging-objects configured on this interface */
    62: list<SecurityLoggingObjectLink> slo_list;
+   /** Mode of vhostuser */
+   63: byte vhostuser_mode;
+   /** If current VMI is SI VMI, then below field is uuid of VMI of other
+       end of SI */
+   64: string si_other_end_vmi;
 }
 
 /**
@@ -788,6 +793,8 @@ struct VrfSandeshData {
    13: i32 mac_aging_time;
    /** Layer 2 control word */
    14: bool layer2_control_word;
+   /** Forwarding VRF */
+   15: string forwarding_vrf;
 }
 
 /**
@@ -2842,6 +2849,8 @@ struct HealthCheckSandeshData {
     1: string uuid;
     /** Name of health check service */
     2: string name;
+    /** Type of health check service - segment/end-to-end/link-local */
+    13: string service_type;
     /** Type of monitor for health check service - HTTP,... */
     3: string monitor_type;
     /** Http method for health check service */
@@ -2852,8 +2861,12 @@ struct HealthCheckSandeshData {
     6: string expected_codes;
     /** Delay for health check service */
     7: u32 delay;
+    /** Delay in usecs for health check service */
+    11: u64 delay_usecs;
     /** Timeout for health check service */
     8: u32 timeout;
+    /** Timeout in usecs for health check service */
+    12: u64 timeout_usecs;
     /** Maximum retries for health check service */
     9: u32 max_retries;
     /** List of health check instance information */

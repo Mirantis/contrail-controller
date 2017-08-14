@@ -41,7 +41,9 @@
 #include <sandesh/common/vns_constants.h>
 #include <filter/acl.h>
 #include <filter/policy_set.h>
-
+#include <resource_manager/resource_manager.h>
+#include <resource_manager/resource_table.h>
+#include <resource_manager/vm_interface_index.h>
 using namespace std;
 using namespace boost::uuids;
 using boost::assign::map_list_of;
@@ -124,6 +126,11 @@ std::auto_ptr<DBEntry> InterfaceTable::AllocEntry(const DBRequestKey *k) const{
                                   (key->AllocEntry(this)));
 }
 
+void InterfaceTable::FreeInterfaceId(size_t index) {
+    agent()->resource_manager()->Release(Resource::INTERFACE_INDEX, index);
+    index_table_.Remove(index);
+}
+
 DBEntry *InterfaceTable::OperDBAdd(const DBRequest *req) {
     InterfaceKey *key = static_cast<InterfaceKey *>(req->key.get());
     InterfaceData *data = static_cast<InterfaceData *>(req->data.get());
@@ -136,8 +143,12 @@ DBEntry *InterfaceTable::OperDBAdd(const DBRequest *req) {
     } else  if (intf->type_ == Interface::LOGICAL) {
         li_count_++;
     }
-
-    intf->id_ = index_table_.Insert(intf);
+    ResourceManager::KeyPtr rkey(new VmInterfaceIndexResourceKey
+                                 (agent()->resource_manager(), key->uuid_,
+                                  key->name_));
+    intf->id_ = static_cast<IndexResourceData *>(agent()->resource_manager()->
+                                                 Allocate(rkey).get())->index();
+    index_table_.InsertAtIndex(intf->id_, intf);
 
     intf->transport_ = data->transport_;
     // Get the os-ifindex and mac of interface
@@ -224,6 +235,7 @@ bool InterfaceTable::OperDBResync(DBEntry *entry, const DBRequest *req) {
             intf->qos_config_ = qos_config;
             return true;
         }
+        return false;
     }
 
     if (key->type_ != Interface::VM_INTERFACE)
@@ -323,6 +335,10 @@ bool InterfaceTable::L2VmInterfaceWalk(DBTablePartBase *partition,
     if (!vm_intf->IsActive())
         return true;
 
+    if (!vn) {
+        return true;
+    }
+
     VmInterfaceGlobalVrouterData data(vn->bridging(),
                                  vn->layer3_forwarding(),
                                  vn->GetVxLanId());
@@ -350,6 +366,30 @@ InterfaceConstRef InterfaceTable::FindVmi(const boost::uuids::uuid &vmi_uuid) {
     InterfaceConstRef ref(intf);
     return ref;
 }
+
+void InterfaceTable::CreateVhost() {
+    DBRequest req(DBRequest::DB_ENTRY_ADD_CHANGE);
+    req.key.reset(new VmInterfaceKey(AgentKey::ADD_DEL_CHANGE, nil_uuid(),
+                                     agent()->vhost_interface_name()));
+
+    VmInterfaceConfigData *data = new VmInterfaceConfigData(agent(), NULL);
+    data->CopyVhostData(agent());
+
+    req.data.reset(data);
+    Process(req);
+}
+
+void InterfaceTable::CreateVhostReq() {
+    DBRequest req(DBRequest::DB_ENTRY_ADD_CHANGE);
+    req.key.reset(new VmInterfaceKey(AgentKey::ADD_DEL_CHANGE, nil_uuid(),
+                                     agent()->vhost_interface_name()));
+
+    VmInterfaceConfigData *data = new VmInterfaceConfigData(agent(), NULL);
+    data->CopyVhostData(agent());
+
+    req.data.reset(data);
+    Enqueue(&req);
+}
 /////////////////////////////////////////////////////////////////////////////
 // Interface Base Entry routines
 /////////////////////////////////////////////////////////////////////////////
@@ -369,6 +409,7 @@ Interface::~Interface() {
     InterfaceTable *table = static_cast<InterfaceTable *>(get_table());
     if (id_ != kInvalidIndex) {
         table->FreeInterfaceId(id_);
+        id_ = kInvalidIndex;
         if (type_ == VM_INTERFACE) {
             table->decr_vmi_count();
         } else if (type_ == LOGICAL) {
@@ -694,6 +735,8 @@ static string VmiTypeToString(VmInterface::VmiType type) {
         return "Remote VM";
     } else if (type == VmInterface::SRIOV) {
         return "Sriov";
+    } else if (type == VmInterface::VHOST) {
+        return "VHOST";
     }
     return "Invalid";
 }
@@ -1137,6 +1180,7 @@ void Interface::SetItfSandeshData(ItfSandeshData &data) const {
 
         data.set_sub_type(DeviceTypeToString(vintf->device_type()));
         data.set_vmi_type(VmiTypeToString(vintf->vmi_type()));
+        data.set_vhostuser_mode(vintf->vhostuser_mode());
 
         if (vintf->vrf_assign_acl()) {
             std::string vrf_assign_acl;
@@ -1175,6 +1219,7 @@ void Interface::SetItfSandeshData(ItfSandeshData &data) const {
             ++sit;
         }
         data.set_slo_list(slo_list);
+        data.set_si_other_end_vmi(UuidToString(vintf->si_other_end_vmi()));
         break;
     }
     case Interface::INET: {

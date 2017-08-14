@@ -166,13 +166,15 @@ bool ControllerRouteWalker::VrfNotifyInternal(DBTablePartBase *partition,
     VrfEntry *vrf = static_cast<VrfEntry *>(entry);
     if (peer_->GetType() == Peer::BGP_PEER) {
         BgpPeer *bgp_peer = static_cast<BgpPeer *>(peer_);
+        if (IgnoreNotify()) {
+            return false;
+        }
 
         DBTableBase::ListenerId id = bgp_peer->GetVrfExportListenerId();
         VrfExport::State *state = 
             static_cast<VrfExport::State *>(vrf->GetState(partition->parent(), 
                                                           id)); 
-        //TODO check if state is not added for default vrf
-        if (state && (vrf->GetName().compare(agent()->fabric_vrf_name()) != 0)) {
+        if (state) {
             StartRouteWalk(vrf);
         }
 
@@ -208,6 +210,10 @@ bool ControllerRouteWalker::RouteNotifyInternal(DBTablePartBase *partition,
         return true;
 
     BgpPeer *bgp_peer = static_cast<BgpPeer *>(peer_);
+    if (IgnoreNotify()) {
+        return false;
+    }
+
     Agent::RouteTableType table_type = route->GetTableType();
 
     //Get the route state
@@ -333,4 +339,9 @@ void ControllerRouteWalker::Start(Type type, bool associate,
 
 bool ControllerRouteWalker::IsDeleteWalk() const {
     return ((type_ == DELSTALE) || (type_ == DELPEER));
+}
+
+bool ControllerRouteWalker::IgnoreNotify() {
+    BgpPeer *bgp_peer = static_cast<BgpPeer *>(peer_);
+    return bgp_peer->SkipAddChangeRequest();
 }

@@ -7,6 +7,9 @@ xmlns:ifmap="http://www.trustedcomputinggroup.org/2010/IFMAP/2"
 xmlns:meta="http://www.trustedcomputinggroup.org/2010/IFMAP-METADATA/2" 
 targetNamespace="http://www.contrailsystems.com/2012/VNC-CONFIG/0">
 
+<!-- E2 services -->
+<xsd:include schemaLocation='e2_services.xsd'/>
+
 <!-- Definition of IFMAP-SEMANTICS-IDL 
      It describes relationship and properties of meta data elements with 
      respect to identifier. It appears in comment after the referenced 
@@ -71,6 +74,7 @@ targetNamespace="http://www.contrailsystems.com/2012/VNC-CONFIG/0">
     <xsd:all>
         <xsd:element name="start" type="xsd:string"/>
         <xsd:element name="end" type="xsd:string"/>
+        <xsd:element name="vrouter-specific-pool" type="xsd:boolean"/>
     </xsd:all>
 </xsd:complexType>
 
@@ -1536,6 +1540,11 @@ targetNamespace="http://www.contrailsystems.com/2012/VNC-CONFIG/0">
      Link('virtual-network-network-ipam',
           'virtual-network', 'network-ipam', ['ref'], 'required', 'CRUD',
           'Reference to network-ipam this network is using. It has list of subnets that are being used as property of the reference.') -->
+<xsd:element name="virtual-router-network-ipam" type="AllocationPoolType"/>
+<!--#IFMAP-SEMANTICS-IDL
+     Link('virtual-router-network-ipam',
+          'virtual-router', 'network-ipam', ['ref'], 'optional', 'CRUD',
+          'Reference to network-ipam this virtual-router is using. It has list of virtual-router specific allocation-pools that are being used as property of the reference.') -->
 
 <xsd:element name="network-policy" type="ifmap:IdentityType"/>
 <xsd:element name="project-network-policy"/>
@@ -1774,13 +1783,17 @@ targetNamespace="http://www.contrailsystems.com/2012/VNC-CONFIG/0">
 
 <xsd:element name="virtual-machine-virtual-machine-interface"/> <!-- DEPRECATED -->
 <xsd:element name="project-virtual-machine-interface"/>
+<xsd:element name="virtual-router-virtual-machine-interface"/>
 <!--#IFMAP-SEMANTICS-IDL 
      Link('virtual-machine-virtual-machine-interface',
           'virtual-machine', 'virtual-machine-interface', ['has'], 'optional', 'CRUD',
-          'References to child interfaces this virtual machine has, this is being DEPRECATED.');
+          'References to child interfaces this virtual machine has, this is DEPRECATED.');
      Link('project-virtual-machine-interface',
           'project', 'virtual-machine-interface', ['has'], 'optional', 'CRUD',
-          'Virtual machine interface represent a interface(port) into virtual network. It may or may not have corresponding virtual machine. A virtual machine interface has atleast a MAC address and Ip address.')
+          'Virtual machine interface represent a interface(port) into virtual network. It may or may not have corresponding virtual machine. A virtual machine interface has atleast a MAC address and Ip address.');
+     Link('virtual-router-virtual-machine-interface',
+          'virtual-router', 'virtual-machine-interface', ['has'], 'optional', 'CRUD',
+          'An interface on a virtual-router, e.g. vhost0')
  -->
 
 <xsd:element name="virtual-machine-interface-virtual-machine"/>
@@ -1871,6 +1884,11 @@ targetNamespace="http://www.contrailsystems.com/2012/VNC-CONFIG/0">
      Link('instance-ip-virtual-network',
           'instance-ip', 'virtual-network', ['ref'], 'required', 'CRUD',
           'Reference to virtual network of this instance ip.') -->
+<xsd:element name="instance-ip-network-ipam"/>
+<!--#IFMAP-SEMANTICS-IDL
+     Link('instance-ip-network-ipam',
+          'instance-ip', 'network-ipam', ['ref'], 'required', 'CRUD',
+          'Reference to network ipam of this instance ip.') -->
 <xsd:element name="instance-ip-virtual-machine-interface"/>
 <!--#IFMAP-SEMANTICS-IDL 
      Link('instance-ip-virtual-machine-interface',
@@ -1882,6 +1900,11 @@ targetNamespace="http://www.contrailsystems.com/2012/VNC-CONFIG/0">
           'instance-ip', 'physical-router', ['ref'], 'optional', 'CRUD',
           'This instance ip is used as IRB address on the referenced physical router (e.g.MX), In case of OVSDB TOR usecase this address will be used as default gateway for Host behind the TOR.') -->
 
+<xsd:element name="instance-ip-virtual-router"/>
+<!--#IFMAP-SEMANTICS-IDL
+     Link('instance-ip-virtual-router',
+          'instance-ip', 'virtual-router', ['ref'], 'optional', 'CRUD',
+          'Reference to virtual router of this instance ip.') -->
 <xsd:element name="subnet" type="ifmap:IdentityType"/>
 <xsd:element name="subnet-ip-prefix" type="SubnetType"/>
 <!--#IFMAP-SEMANTICS-IDL
@@ -2096,6 +2119,9 @@ targetNamespace="http://www.contrailsystems.com/2012/VNC-CONFIG/0">
      <xsd:restriction base='xsd:string'>
          <xsd:enumeration value='spine'/>
          <xsd:enumeration value='leaf'/>
+         <xsd:enumeration value='e2-access'/>
+         <xsd:enumeration value='e2-provider'/>
+         <xsd:enumeration value='e2-internet'/>
      </xsd:restriction>
 </xsd:simpleType>
 
@@ -2140,6 +2166,16 @@ targetNamespace="http://www.contrailsystems.com/2012/VNC-CONFIG/0">
 <!--#IFMAP-SEMANTICS-IDL
      Property('physical-router-role', 'physical-router', 'optional', 'CRUD',
               'Physical router role (e.g spine or leaf), used by the device manager to provision physical router, for e.g device manager may choose to configure physical router based on its role.') -->
+
+<xsd:element name="physical-router-snmp" type="xsd:boolean"/>
+<!--#IFMAP-SEMANTICS-IDL
+     Property('physical-router-snmp', 'physical-router', 'optional', 'CRUD',
+              'SNMP support on this router') -->
+
+<xsd:element name="physical-router-lldp" type="xsd:boolean"/>
+<!--#IFMAP-SEMANTICS-IDL
+     Property('physical-router-lldp', 'physical-router', 'optional', 'CRUD',
+              'LLDP support on this router') -->
 
 <xsd:complexType name="UserCredentials">
     <xsd:all>
@@ -2645,6 +2681,12 @@ targetNamespace="http://www.contrailsystems.com/2012/VNC-CONFIG/0">
      Link('service-port-health-check',
           'virtual-machine-interface', 'service-health-check', ['ref', 'derived'], 'optional', 'CRUD',
           'Reference to health check object attached to this interface.') -->
+
+<xsd:element name="bgpaas-health-check"/>
+<!--#IFMAP-SEMANTICS-IDL
+     Link('bgpaas-health-check',
+          'bgp-as-a-service', 'service-health-check', ['ref'], 'optional', 'CRUD',
+          'Reference to health check object attached to BGPaaS object, used to enable BFD health check over active BGPaaS VMI.') -->
 
 <xsd:element name="route-table" type="ifmap:IdentityType"/>
 <xsd:element name="project-route-table"/>

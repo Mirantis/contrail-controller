@@ -43,6 +43,7 @@ struct ShowBgpNeighborFamily {
     1: string family;
     2: u32 loop_count;
     3: u32 prefix_limit;
+    5: i32 idle_timeout;
     4: string gateway_address;
 }
 
@@ -186,6 +187,16 @@ struct ShowLoadBalance {
     2: list<string> fields;
 }
 
+struct ShowEdgeDiscovery {
+    1: string address;
+    2: string labels;
+}
+
+struct ShowEdgeForwarding {
+    1: string in_address_label;
+    2: string out_address_label;
+}
+
 struct ShowRoutePath {
     1: string protocol;
     3: string last_modified;
@@ -193,7 +204,7 @@ struct ShowRoutePath {
     25: u32 med;
     6: u32 local_as;
     7: u32 peer_as;
-    8: string peer_router_id;           // neighbor neighbor route id
+    8: string peer_router_id;           // neighbor router id
     9: string source;                   // neighbor ip address
     10: string as_path;
     11: string next_hop;
@@ -212,6 +223,8 @@ struct ShowRoutePath {
     22: ShowLoadBalance load_balance;
     23: list<string> cluster_list;
     27: string originator_id;
+    28: list<ShowEdgeDiscovery> edge_discovery;
+    29: list<ShowEdgeForwarding> edge_forwarding;
 }
 
 struct ShowRoute {
@@ -727,6 +740,7 @@ struct ShowBgpNeighborFamilyConfig {
     1: string family;
     2: i32 loop_count;
     3: i32 prefix_limit;
+    5: i32 idle_timeout;
     4: string gateway_address;
 }
 

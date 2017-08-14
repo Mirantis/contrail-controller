@@ -16,10 +16,11 @@ import copy
 import uuid
 
 import itertools
+import socket
 import cfgm_common as common
 from netaddr import IPNetwork, IPAddress
 from cfgm_common.exceptions import NoIdError, RefsExistError, BadRequest
-from cfgm_common.exceptions import HttpError
+from cfgm_common.exceptions import HttpError, RequestSizeError
 from cfgm_common import svc_info
 from cfgm_common.vnc_db import DBBase
 from vnc_api.vnc_api import *
@@ -28,6 +29,7 @@ from pysandesh.sandesh_base import *
 from pysandesh.sandesh_logger import *
 from cfgm_common.uve.virtual_network.ttypes import *
 from schema_transformer.sandesh.st_introspect import ttypes as sandesh
+from cfgm_common.uve.config_req.ttypes import *
 try:
     # python2.7
     from collections import OrderedDict
@@ -47,6 +49,14 @@ _PROTO_STR_TO_NUM = {
 SGID_MIN_ALLOC = common.SGID_MIN_ALLOC
 
 
+def _raise_and_send_uve_to_sandesh(obj_type, err_info, sandesh):
+    config_req_err = SystemConfigReq(obj_type=obj_type,
+                                  err_info=err_info)
+    config_req_err.name = socket.gethostname()
+    config_req_trace = SystemConfigReqTrace(data=config_req_err,
+                                         sandesh=sandesh)
+    config_req_trace.send(sandesh=sandesh)
+
 def _access_control_list_update(acl_obj, name, obj, entries):
     if acl_obj is None:
         if entries is None:
@@ -59,6 +69,14 @@ def _access_control_list_update(acl_obj, name, obj, entries):
             DBBaseST._logger.error(
                 "Error while creating acl %s for %s: %s" %
                 (name, obj.get_fq_name_str(), str(e)))
+        except RequestSizeError as e:
+            # log the error and raise an alarm
+            DBBaseST._logger.error(
+                "Bottle request size error while creating acl %s for %s" %
+                (name, obj.get_fq_name_str()))
+            err_info = {'acl rule limit exceeded': True}
+            _raise_and_send_uve_to_sandesh('ACL', err_info,
+                                           DBBaseST._sandesh)
         return None
     else:
         if entries is None:
@@ -85,6 +103,14 @@ def _access_control_list_update(acl_obj, name, obj, entries):
         except NoIdError:
             DBBaseST._logger.error("NoIdError while updating acl %s for %s" %
                                    (name, obj.get_fq_name_str()))
+        except RequestSizeError as e:
+            # log the error and raise an alarm
+            DBBaseST._logger.error(
+                "Bottle request size error while creating acl %s for %s" %
+                (name, obj.get_fq_name_str()))
+            err_info = {'acl rule limit exceeded': True}
+            _raise_and_send_uve_to_sandesh('ACL', err_info,
+                                           DBBaseST._sandesh)
     return acl_obj
 # end _access_control_list_update
 
@@ -323,8 +349,6 @@ class VirtualNetworkST(DBBaseST):
             nid = prop.network_id or self._object_db.alloc_vn_id(name) + 1
             self.obj.set_virtual_network_network_id(nid)
             self._vnc_lib.virtual_network_update(self.obj)
-        if self.obj.get_fq_name() == common.IP_FABRIC_VN_FQ_NAME:
-            default_ri_fq_name = common.IP_FABRIC_RI_FQ_NAME
         elif self.obj.get_fq_name() == common.LINK_LOCAL_VN_FQ_NAME:
             default_ri_fq_name = common.LINK_LOCAL_RI_FQ_NAME
         else:
@@ -944,7 +968,7 @@ class VirtualNetworkST(DBBaseST):
         vmis = vm_pt.virtual_machine_interfaces
         for vmi_name in vmis:
             vmi = VirtualMachineInterfaceST.get(vmi_name)
-            if vmi and vmi.service_interface_type == 'left':
+            if vmi and vmi.is_left():
                 vn_analyzer = vmi.virtual_network
                 ip_analyzer = vmi.get_any_instance_ip_address()
                 break
@@ -1976,8 +2000,8 @@ class RoutingInstanceST(DBBaseST):
         self.route_aggregates = set()
         self.service_chain_info = self.obj.get_service_chain_information()
         self.v6_service_chain_info = self.obj.get_ipv6_service_chain_information()
-        if self.obj.get_parent_fq_name() in [common.IP_FABRIC_VN_FQ_NAME,
-                                             common.LINK_LOCAL_VN_FQ_NAME]:
+        if self.obj.get_fq_name() in (common.IP_FABRIC_RI_FQ_NAME,
+                                      common.LINK_LOCAL_RI_FQ_NAME):
             return
         self.locate_route_target()
         for ri_ref in self.obj.get_routing_instance_refs() or []:
@@ -2645,8 +2669,7 @@ class ServiceChain(DBBaseST):
             interface = VirtualMachineInterfaceST.get(interface_name)
             if not interface:
                 continue
-            if interface.service_interface_type not in ['left',
-                                                        'right']:
+            if not (interface.is_left() or interface.is_right()):
                 continue
             v4_addr = None
             v6_addr = None
@@ -2886,7 +2909,7 @@ class ServiceChain(DBBaseST):
             direction='both', vlan_tag=vlan, service_chain_address=v4_address,
             ipv6_service_chain_address=v6_address)
 
-        if vmi.service_interface_type == 'left':
+        if vmi.is_left():
             pbf.set_src_mac('02:00:00:00:00:01')
             pbf.set_dst_mac('02:00:00:00:00:02')
         else:
@@ -3441,6 +3464,12 @@ class VirtualMachineInterfaceST(DBBaseST):
         self.recreate_vrf_assign_table()
     # end evaluate
 
+    def is_left(self):
+        return (self.service_interface_type == 'left')
+
+    def is_right(self):
+        return (self.service_interface_type == 'right')
+
     def get_any_instance_ip_address(self, ip_version=0):
         for ip_name in self.instance_ips:
             ip = InstanceIpST.get(ip_name)
@@ -3531,7 +3560,7 @@ class VirtualMachineInterfaceST(DBBaseST):
     # end get_service_instance
 
     def _add_pbf_rules(self):
-        if self.service_interface_type not in ['left', 'right']:
+        if not (self.is_left() or self.is_right()):
             return
 
         vm_pt_list = self.get_virtual_machine_or_port_tuple()
@@ -3543,7 +3572,7 @@ class VirtualMachineInterfaceST(DBBaseST):
                     continue
                 if not service_chain.created:
                     continue
-                if self.service_interface_type == 'left':
+                if self.is_left():
                     vn_obj = VirtualNetworkST.locate(service_chain.left_vn)
                     vn1_obj = vn_obj
                 else:
@@ -3596,7 +3625,7 @@ class VirtualMachineInterfaceST(DBBaseST):
     # end process_analyzer
 
     def recreate_vrf_assign_table(self):
-        if self.service_interface_type not in ['left', 'right']:
+        if not (self.is_left() or self.is_right()):
             self._set_vrf_assign_table(None)
             return
         vn = VirtualNetworkST.get(self.virtual_network)
@@ -3646,21 +3675,21 @@ class VirtualMachineInterfaceST(DBBaseST):
                 vrf_table.add_vrf_assign_rule(vrf_rule)
 
             si_name = vm_pt.service_instance
-            if smode == 'in-network-nat' and self.service_interface_type == 'right':
-                vn_service_chains = []
-            else:
-                vn_service_chains = vn.service_chains.values()
-
-            for service_chain_list in vn_service_chains:
+            for service_chain_list in vn.service_chains.values():
                 for service_chain in service_chain_list:
                     if not service_chain.created:
                         continue
+                    service_list = service_chain.service_list
                     if si_name not in service_chain.service_list:
+                        continue
+                    if ((si_name == service_list[0] and self.is_left()) or
+                        (si_name == service_list[-1] and self.is_right())):
+                        # Do not generate VRF assign rules for 'book-ends'
                         continue
                     ri_name = vn.get_service_name(service_chain.name, si_name)
                     for sp in service_chain.sp_list:
                         for dp in service_chain.dp_list:
-                            if self.service_interface_type == 'left':
+                            if self.is_left():
                                 mc = MatchConditionType(src_port=dp,
                                                         dst_port=sp,
                                                         protocol=service_chain.protocol)

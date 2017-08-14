@@ -298,6 +298,14 @@ struct FlowData {
     uint32_t component_nh_idx;
     uint32_t bgp_as_a_service_port;
     uint32_t ttl;
+    // In case of policy on fabric, the forwarding happens in
+    // agent_->fabric_vrf(), but policy processing must happen in
+    // agent_->fabric_policy_vrf(). Storing the route infor for
+    // fabric_policy_vrf() for tracking purpose
+    uint32_t src_policy_vrf;
+    uint32_t src_policy_plen;
+    uint32_t dst_policy_vrf;
+    uint32_t dst_policy_plen;
 
     // Stats
     uint8_t source_plen;
@@ -321,6 +329,8 @@ struct FlowData {
     // rpf_vrf will be VrfEntry::kInvalidIndex if flow uses l2-route for RPF
     uint32_t rpf_vrf;
     uint8_t rpf_plen;
+
+    bool disable_validation; // ignore RPF on specific flows (like BFD health check)
 
     std::string vm_cfg_name;
     uint32_t acl_assigned_vrf_index_;
@@ -503,7 +513,8 @@ class FlowEntry {
         TcpAckFlow      = 1 << 10,
         UnknownUnicastFlood = 1 << 11,
         BgpRouterService   = 1 << 12,
-        AliasIpFlow     = 1 << 13
+        AliasIpFlow     = 1 << 13,
+        FabricControlFlow = 1 << 14
     };
 
     FlowEntry(FlowTable *flow_table);
@@ -665,6 +676,7 @@ class FlowEntry {
     void set_deleted(bool deleted) { deleted_ = deleted; }
     void SetAclAction(std::vector<AclAction> &acl_action_l) const;
     void UpdateReflexiveAction();
+    bool IsFabricControlFlow() const;
     void SetAclFlowSandeshData(const AclDBEntry *acl,
                                FlowSandeshData &fe_sandesh_data,
                                Agent *agent) const;

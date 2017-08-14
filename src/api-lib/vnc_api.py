@@ -28,7 +28,7 @@ from cfgm_common import _obj_serializer_all
 from cfgm_common.exceptions import (
         ServiceUnavailableError, NoIdError, PermissionDenied, OverQuota,
         RefsExistError, TimeOutError, BadRequest, HttpError,
-        ResourceTypeUnknownError)
+        ResourceTypeUnknownError, RequestSizeError)
 from cfgm_common import ssl_adapter
 
 
@@ -937,6 +937,8 @@ class VncApi(object):
                 raise OverQuota(content)
             elif status == 409:
                 raise RefsExistError(content)
+            elif status == 413:
+                raise RequestSizeError(content)
             elif status == 504:
                 # Request sent to API server, but no response came within 50s
                 raise TimeOutError('Gateway Timeout 504')
@@ -1228,7 +1230,11 @@ class VncApi(object):
     @check_homepage
     def resource_list(self, obj_type, parent_id=None, parent_fq_name=None,
                       back_ref_id=None, obj_uuids=None, fields=None,
-                      detail=False, count=False, filters=None, shared=False):
+                      detail=False, count=False, filters=None, shared=False,
+                      token=None):
+        if obj_uuids == [] or back_ref_id == []:
+            return []
+        self._headers['X-USER-TOKEN'] = token
         if not obj_type:
             raise ResourceTypeUnknownError(obj_type)
 
@@ -1320,6 +1326,8 @@ class VncApi(object):
             resource_obj.set_server_conn(self)
             resource_objs.append(resource_obj)
 
+        if 'X-USER-TOKEN' in self._headers:
+            del self._headers['X-USER-TOKEN']
         return resource_objs
     # end resource_list
 
@@ -1399,12 +1407,6 @@ class VncApi(object):
                 rest.OP_POST, self._action_uri['chmod'],
                 data=json.dumps(payload))
         return content
-
-    def set_multi_tenancy(self, enabled):
-        url = self._action_uri['multi-tenancy']
-        data = {'enabled': enabled}
-        content = self._request_server(rest.OP_PUT, url, json.dumps(data))
-        return json.loads(content)
 
     def set_aaa_mode(self, mode):
         if mode not in cfgm_common.AAA_MODE_VALID_VALUES:

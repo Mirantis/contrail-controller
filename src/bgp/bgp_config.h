@@ -87,12 +87,13 @@ private:
 //
 struct BgpFamilyAttributesConfig {
     explicit BgpFamilyAttributesConfig(const std::string &family)
-        : family(family), loop_count(0), prefix_limit(0) {
+        : family(family), loop_count(0), prefix_limit(0), idle_timeout(0) {
     }
 
     std::string family;
     uint8_t loop_count;
     uint32_t prefix_limit;
+    uint32_t idle_timeout;
 };
 
 //
@@ -104,6 +105,7 @@ struct BgpFamilyAttributesConfigCompare {
         KEY_COMPARE(lhs.family, rhs.family);
         KEY_COMPARE(lhs.loop_count, rhs.loop_count);
         KEY_COMPARE(lhs.prefix_limit, rhs.prefix_limit);
+        KEY_COMPARE(lhs.idle_timeout, rhs.idle_timeout);
         return 0;
     }
 };
@@ -345,8 +347,9 @@ typedef std::vector<PrefixMatchConfig> PrefixMatchConfigList;
 
 struct RoutingPolicyMatchConfig {
     ProtocolList protocols_match;
-    std::string community_match;
     PrefixMatchConfigList prefixes_to_match;
+    CommunityList community_match;
+    bool community_match_all;
     std::string ToString() const;
 };
 
@@ -369,7 +372,7 @@ struct RoutingPolicyActionConfig {
     std::string ToString() const;
 };
 
-struct RoutingPolicyTerm {
+struct RoutingPolicyTermConfig {
     RoutingPolicyMatchConfig match;
     RoutingPolicyActionConfig action;
 };
@@ -377,13 +380,13 @@ struct RoutingPolicyTerm {
 // Route Policy configuration.
 class BgpRoutingPolicyConfig {
 public:
-    typedef std::vector<RoutingPolicyTerm> RoutingPolicyTermList;
+    typedef std::vector<RoutingPolicyTermConfig> RoutingPolicyTermList;
     explicit BgpRoutingPolicyConfig(const std::string &name);
     virtual ~BgpRoutingPolicyConfig();
 
     const std::string &name() const { return name_; }
     void set_last_change_at(uint64_t tstamp) const { last_change_at_ = tstamp; }
-    void add_term(const RoutingPolicyTerm &term) {
+    void add_term(const RoutingPolicyTermConfig &term) {
         terms_.push_back(term);
     }
     const RoutingPolicyTermList &terms() const { return terms_;}

@@ -15,7 +15,9 @@
 #include "bgp/extended-community/mac_mobility.h"
 #include "bgp/extended-community/router_mac.h"
 #include "bgp/extended-community/site_of_origin.h"
+#include "bgp/extended-community/source_as.h"
 #include "bgp/extended-community/tag.h"
+#include "bgp/extended-community/vrf_route_import.h"
 #include "bgp/origin-vn/origin_vn.h"
 #include "bgp/routing-instance/routepath_replicator.h"
 #include "bgp/routing-instance/routing_instance.h"
@@ -24,6 +26,7 @@
 
 using std::string;
 using std::vector;
+using std::ostringstream;
 
 BgpRoute::BgpRoute() {
 }
@@ -415,6 +418,12 @@ static void FillRoutePathExtCommunityInfo(const BgpTable *table,
         } else if (ExtCommunity::is_tag(*it)) {
             Tag tag(*it);
             communities->push_back(tag.ToString());
+        } else if (ExtCommunity::is_source_as(*it)) {
+            SourceAs sas(*it);
+            communities->push_back(sas.ToString());
+        } else if (ExtCommunity::is_vrf_route_import(*it)) {
+            VrfRouteImport rt_import(*it);
+            communities->push_back(rt_import.ToString());
         } else {
             char temp[50];
             int len = snprintf(temp, sizeof(temp), "ext community: ");
@@ -425,6 +434,52 @@ static void FillRoutePathExtCommunityInfo(const BgpTable *table,
         }
     }
     show_path->set_tunnel_encap(tunnel_encap);
+}
+
+static void FillEdgeForwardingInfo(const EdgeForwarding *edge_forwarding,
+    ShowRoutePath *show_path) {
+    vector<ShowEdgeForwarding> show_ef_list;
+    vector<EdgeForwardingSpec::Edge *> edge_list =
+        edge_forwarding->edge_forwarding().edge_list;
+    for (vector<EdgeForwardingSpec::Edge *>::const_iterator it =
+            edge_list.begin(); it != edge_list.end(); ++it) {
+        const EdgeForwardingSpec::Edge *edge = *it;
+        ShowEdgeForwarding show_ef;
+        ostringstream oss;
+        oss << edge->GetInboundIp4Address() << ":" << edge->inbound_label;
+        show_ef.set_in_address_label(oss.str());
+        oss.str("");
+        oss.clear();
+        oss << edge->GetOutboundIp4Address() << ":" << edge->outbound_label;
+        show_ef.set_out_address_label(oss.str());
+        show_ef_list.push_back(show_ef);
+    }
+    show_path->set_edge_forwarding(show_ef_list);
+}
+
+static void FillEdgeDiscoveryInfo(const EdgeDiscovery *edge_discovery,
+    ShowRoutePath *show_path) {
+    vector<ShowEdgeDiscovery> show_ed_list;
+    vector<EdgeDiscoverySpec::Edge *> edge_list =
+        edge_discovery->edge_discovery().edge_list;
+    int idx = 0;
+    for (vector<EdgeDiscoverySpec::Edge *>::const_iterator it =
+            edge_list.begin();
+         it != edge_list.end(); ++it, ++idx) {
+        const EdgeDiscoverySpec::Edge *edge = *it;
+        ShowEdgeDiscovery show_ed;
+        ostringstream oss;
+        uint32_t first_label, last_label;
+        oss << edge->GetIp4Address();
+        show_ed.set_address(oss.str());
+        oss.str("");
+        oss.clear();
+        edge->GetLabels(&first_label, &last_label);
+        oss << first_label << "-" << last_label;
+        show_ed.set_labels(oss.str());
+        show_ed_list.push_back(show_ed);
+    }
+    show_path->set_edge_discovery(show_ed_list);
 }
 
 static void FillOriginVnPathInfo(const OriginVnPath *ovnpath,
@@ -487,6 +542,12 @@ void BgpRoute::FillRouteInfo(const BgpTable *table,
         }
 
         const BgpAttr *attr = path->GetAttr();
+        if (attr->edge_forwarding()) {
+            FillEdgeForwardingInfo(attr->edge_forwarding(), &srp);
+        }
+        if (attr->edge_discovery()) {
+            FillEdgeDiscoveryInfo(attr->edge_discovery(), &srp);
+        }
         srp.set_origin(attr->origin_string());
         if (attr->as_path() != NULL)
             srp.set_as_path(attr->as_path()->path().ToString());

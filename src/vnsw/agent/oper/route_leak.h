@@ -6,7 +6,7 @@
 
 struct RouteLeakState :  public DBState {
     RouteLeakState(Agent *agent, VrfEntry *vrf):
-        agent_(agent), dest_vrf_(vrf) {}
+        agent_(agent), dest_vrf_(vrf), local_peer_(false) {}
 
     void AddRoute(const AgentRoute *route);
     void DeleteRoute(const AgentRoute *route);
@@ -22,8 +22,10 @@ struct RouteLeakState :  public DBState {
 private:
     void AddIndirectRoute(const AgentRoute *route);
     void AddInterfaceRoute(const AgentRoute *route);
+    void AddReceiveRoute(const AgentRoute *route);
     Agent *agent_;
     VrfEntryRef dest_vrf_;
+    bool local_peer_;
 };
 
 class RouteLeakVrfState : public DBState {

@@ -303,7 +303,7 @@ class SystemdProcessInfoManager(object):
                 gevent.sleep(seconds=5)
         else:
             for unit_name, unit in self._units.items():
-                unit_properties_changed_cb = partial(self.UnitPropertiesChanged,
+                unit_properties_changed_cb = partial(self._UnitPropertiesChanged,
                     unit_name = unit_name)
                 unit.PropertiesChanged.connect(unit_properties_changed_cb)
             while True:
@@ -974,7 +974,7 @@ class EventManager(object):
             if self.tick_count >= 10:
                 self.check_ntp_status()
             if self.update_process_core_file_list():
-                self.send_process_state_db(['default'])
+                self.send_process_state_db([group])
 
             process_mem_cpu_usage = self.get_group_processes_mem_cpu_usage(group)
 

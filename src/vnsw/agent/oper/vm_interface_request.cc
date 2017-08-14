@@ -45,7 +45,7 @@ VmInterfaceKey::VmInterfaceKey(AgentKey::DBSubOperation sub_op,
 }
 
 Interface *VmInterfaceKey::AllocEntry(const InterfaceTable *table) const {
-    return new VmInterface(uuid_);
+    return new VmInterface(uuid_, name_);
 }
 
 Interface *VmInterfaceKey::AllocEntry(const InterfaceTable *table,
@@ -87,7 +87,9 @@ VmInterfaceConfigData::VmInterfaceConfigData(Agent *agent, IFMapNode *node) :
     logical_interface_(nil_uuid()), ecmp_load_balance_(),
     service_health_check_ip_(), service_ip_(0),
     service_ip_ecmp_(false), service_ip6_(), service_ip_ecmp6_(false), 
-    qos_config_uuid_(), learning_enabled_(false) {
+    qos_config_uuid_(), learning_enabled_(false),
+    vhostuser_mode_(VmInterface::vHostUserClient),
+    si_other_end_vmi(nil_uuid()), vmi_cfg_uuid_(nil_uuid()) {
 }
 
 VmInterface *VmInterfaceConfigData::OnAdd(const InterfaceTable *table,
@@ -118,7 +120,7 @@ VmInterface *VmInterfaceConfigData::OnAdd(const InterfaceTable *table,
     VmInterface *vmi =
         new VmInterface(key->uuid_, key->name_, addr_, mac, vm_name_,
                         nil_uuid(), tx_vlan_id_, rx_vlan_id_, parent,
-                        ip6_addr_, device_type_, vmi_type_);
+                        ip6_addr_, device_type_, vmi_type_, vhostuser_mode_);
     vmi->SetConfigurer(VmInterface::CONFIG);
     return vmi;
 }
@@ -158,6 +160,66 @@ bool VmInterfaceConfigData::OnResync(const InterfaceTable *table,
     vmi->SetConfigurer(VmInterface::CONFIG);
     return ret;
 }
+
+//Configuration of vhost interface to be filled from
+//config file. This include
+//1> IP of vhost
+//2> Default route to be populated if any
+//3> Resolve route to be added
+//4> Multicast receive route
+void VmInterfaceConfigData::CopyVhostData(const Agent *agent) {
+    if (agent->params()->vrouter_on_host_dpdk()) {
+        transport_ = Interface::TRANSPORT_PMD;
+    } else {
+        transport_ = Interface::TRANSPORT_ETHERNET;
+    }
+
+    proxy_arp_mode_ = VmInterface::PROXY_ARP_NONE;
+    device_type_ = VmInterface::LOCAL_DEVICE;
+    vmi_type_ = VmInterface::VHOST;
+
+    vrf_name_ = agent->fabric_policy_vrf_name();
+    if (agent->params()->vhost_addr() != Ip4Address(0)) {
+        addr_ = agent->router_id();
+        instance_ipv4_list_.list_.insert(
+            VmInterface::InstanceIp(agent->router_id(), 32, false, true,
+                                    false, false, Ip4Address(0)));
+    }
+
+    boost::system::error_code ec;
+    IpAddress mc_addr =
+        Ip4Address::from_string(IPV4_MULTICAST_BASE_ADDRESS, ec);
+    receive_route_list_.list_.insert(
+            VmInterface::VmiReceiveRoute(mc_addr, MULTICAST_BASE_ADDRESS_PLEN,
+                                         false));
+
+    mc_addr = Ip6Address::from_string(IPV6_MULTICAST_BASE_ADDRESS, ec);
+    disable_policy_ = false;
+    receive_route_list_.list_.insert(
+            VmInterface::VmiReceiveRoute(mc_addr, MULTICAST_BASE_ADDRESS_PLEN,
+                                         false));
+
+    if (agent->params()->subnet_hosts_resolvable() == true) {
+        //Add resolve route
+        subnet_ = agent->params()->vhost_addr();
+        subnet_plen_ = agent->params()->vhost_plen();
+    }
+
+    physical_interface_ = agent->fabric_interface_name();
+
+    PhysicalInterfaceKey physical_key(agent->fabric_interface_name());
+    const Interface *pif =
+        static_cast<const Interface *>(agent->interface_table()->
+                                           FindActiveEntry(&physical_key));
+    vm_mac_ = pif->mac().ToString();
+
+    //Add default route pointing to gateway
+    static_route_list_.list_.insert(
+            VmInterface::StaticRoute(Ip4Address(0), 0,
+                                     agent->params()->vhost_gw(),
+                                     CommunityList()));
+}
+
 
 bool VmInterface::CopyIp6Address(const Ip6Address &addr) {
     bool ret = false;
@@ -230,6 +292,16 @@ bool VmInterface::CopyConfig(const InterfaceTable *table,
         ret = true;
     }
 
+    if (vmi_cfg_uuid_ != data->vmi_cfg_uuid_) {
+        vmi_cfg_uuid_ = data->vmi_cfg_uuid_;
+        ret = true;
+    }
+
+    if (vhostuser_mode_ != data->vhostuser_mode_) {
+        vhostuser_mode_ = data->vhostuser_mode_;
+        ret = true;
+    }
+
     MirrorDirection mirror_direction = data->mirror_direction_;
     if (mirror_direction_ != mirror_direction) {
         mirror_direction_ = mirror_direction;
@@ -251,12 +323,21 @@ bool VmInterface::CopyConfig(const InterfaceTable *table,
         }
 
         bool val = vn ? vn->layer3_forwarding() : false;
+        if (vmi_type_ == VHOST) {
+            val = true;
+        }
+
         if (layer3_forwarding_ != val) {
             layer3_forwarding_ = val;
             ret = true;
         }
 
         val = vn ? vn->bridging() : false;
+        if (vmi_type_ == VHOST) {
+            //Bridging not supported on VHOST vmi
+            val = false;
+        }
+
         if (bridging_ != val) {
             bridging_ = val;
             ret = true;
@@ -380,6 +461,11 @@ bool VmInterface::CopyConfig(const InterfaceTable *table,
         ret = true;
     }
 
+    if (si_other_end_vmi_ != data->si_other_end_vmi) {
+        si_other_end_vmi_ = data->si_other_end_vmi;
+        ret = true;
+    }
+
     // Update MAC address if not set already. We dont allow modification
     // of mac-address
     bool mac_set = true;
@@ -397,6 +483,13 @@ bool VmInterface::CopyConfig(const InterfaceTable *table,
         if (ec.value() != 0) {
             vm_mac_ = MacAddress();
             mac_set_ = false;
+        }
+
+        if (vmi_type_ == VHOST) {
+            vm_mac_ = GetVifMac(table->agent());
+            if (vm_mac_ != MacAddress()) {
+                mac_set_ = true;
+            }
         }
         ret = true;
     }
@@ -555,6 +648,17 @@ bool VmInterface::CopyConfig(const InterfaceTable *table,
         ret = true;
     }
 
+    VmiReceiveRouteSet &old_recv_list = receive_route_list_.list_;
+    const VmiReceiveRouteSet &new_recv_list = data->receive_route_list_.list_;
+    *tag_changed = AuditList<VmiReceiveRouteList,
+                             VmiReceiveRouteSet::iterator>(receive_route_list_,
+                                                           old_recv_list.begin(),
+                                                           old_recv_list.end(),
+                                                           new_recv_list.begin(),
+                                                           new_recv_list.end());
+    if (*tag_changed) {
+        ret = true;
+    }
     bool pbb_interface = new_bd_list.size() ? true: false;
     if (pbb_interface_ != pbb_interface) {
         pbb_interface_ = pbb_interface;
@@ -661,7 +765,8 @@ VmInterfaceNovaData::VmInterfaceNovaData() :
     vm_project_uuid_(),
     physical_interface_(),
     tx_vlan_id_(),
-    rx_vlan_id_() {
+    rx_vlan_id_(),
+    vhostuser_mode_() {
 }
 
 VmInterfaceNovaData::VmInterfaceNovaData(const Ip4Address &ipv4_addr,
@@ -675,6 +780,7 @@ VmInterfaceNovaData::VmInterfaceNovaData(const Ip4Address &ipv4_addr,
                                          uint16_t rx_vlan_id,
                                          VmInterface::DeviceType device_type,
                                          VmInterface::VmiType vmi_type,
+                                         uint8_t vhostuser_mode,
                                          Interface::Transport transport) :
     VmInterfaceData(NULL, NULL, INSTANCE_MSG, transport),
     ipv4_addr_(ipv4_addr),
@@ -687,7 +793,8 @@ VmInterfaceNovaData::VmInterfaceNovaData(const Ip4Address &ipv4_addr,
     tx_vlan_id_(tx_vlan_id),
     rx_vlan_id_(rx_vlan_id),
     device_type_(device_type),
-    vmi_type_(vmi_type) {
+    vmi_type_(vmi_type),
+    vhostuser_mode_(vhostuser_mode) {
 }
 
 VmInterfaceNovaData::~VmInterfaceNovaData() {
@@ -714,7 +821,8 @@ VmInterface *VmInterfaceNovaData::OnAdd(const InterfaceTable *table,
     VmInterface *vmi =
         new VmInterface(key->uuid_, key->name_, ipv4_addr_, mac, vm_name_,
                         vm_project_uuid_, tx_vlan_id_, rx_vlan_id_,
-                        parent, ipv6_addr_, device_type_, vmi_type_);
+                        parent, ipv6_addr_, device_type_, vmi_type_,
+                        vhostuser_mode_);
     vmi->SetConfigurer(VmInterface::INSTANCE_MSG);
     vmi->nova_ip_addr_ = ipv4_addr_;
     vmi->nova_ip6_addr_ = ipv6_addr_;
@@ -778,6 +886,7 @@ void VmInterface::NovaAdd(InterfaceTable *table, const uuid &intf_uuid,
                           const uuid &vm_project_uuid, uint16_t tx_vlan_id,
                           uint16_t rx_vlan_id, const std::string &parent,
                           const Ip6Address &ip6,
+                          uint8_t vhostuser_mode,
                           Interface::Transport transport) {
     DBRequest req(DBRequest::DB_ENTRY_ADD_CHANGE);
     req.key.reset(new VmInterfaceKey(AgentKey::ADD_DEL_CHANGE, intf_uuid,
@@ -788,6 +897,7 @@ void VmInterface::NovaAdd(InterfaceTable *table, const uuid &intf_uuid,
                                            tx_vlan_id, rx_vlan_id,
                                            VmInterface::VM_ON_TAP,
                                            VmInterface::INSTANCE,
+                                           vhostuser_mode,
                                            transport));
     table->Enqueue(&req);
 }
@@ -1000,7 +1110,8 @@ VmInterface *VmInterfaceIfNameData::OnAdd(const InterfaceTable *table,
         new VmInterface(key->uuid_, key->name_, Ip4Address(), MacAddress(), "",
                         nil_uuid(), VmInterface::kInvalidVlanId,
                         VmInterface::kInvalidVlanId, NULL, Ip6Address(),
-                        VmInterface::VM_ON_TAP, VmInterface::INSTANCE);
+                        VmInterface::VM_ON_TAP, VmInterface::INSTANCE,
+                        VmInterface::vHostUserClient);
     vmi->SetConfigurer(VmInterface::INSTANCE_MSG);
     return vmi;
 }

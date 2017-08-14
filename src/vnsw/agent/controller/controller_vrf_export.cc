@@ -43,14 +43,13 @@ void VrfExport::Notify(const Agent *agent, AgentXmppChannel *bgp_xmpp_peer,
 
     BgpPeer *bgp_peer = static_cast<BgpPeer *>(bgp_xmpp_peer->bgp_peer_id());
     VrfEntry *vrf = static_cast<VrfEntry *>(e);
-
     //PBB VRF is implictly created, agent is not supposed to send RI
     //subscription message since control-node will not be aware of this RI
     //We still want to set a state and subscribe for bridge table for
     //building ingress replication tree
     bool send_subscribe  = vrf->ShouldExportRoute();
 
-    uint32_t instance_id = vrf->RDInstanceId();
+    uint32_t instance_id = vrf->rd();
     //Instance ID being zero is possible because of VN unavailability and VRF
     //ending up with NULL VRF. Reason being config sequence.
     //So seeing 0 instance_id delete the state so that resubscribe can be done
@@ -85,18 +84,14 @@ void VrfExport::Notify(const Agent *agent, AgentXmppChannel *bgp_xmpp_peer,
         state->force_chg_ = true;
         vrf->SetState(partition->parent(), id, state);
 
-        if (vrf->GetName().compare(bgp_xmpp_peer->agent()->fabric_vrf_name()) != 0) {
             // Dont export routes belonging to Fabric VRF table
-            for (table_type = (Agent::INVALID + 1);
-                 table_type < Agent::ROUTE_TABLE_MAX;
-                 table_type++)
-            {
-                state->rt_export_[table_type] = 
-                    RouteExport::Init(
-                     static_cast<AgentRouteTable *>                 
-                     (vrf->GetRouteTable(table_type)), 
-                     bgp_xmpp_peer);
-            }
+        for (table_type = (Agent::INVALID + 1);
+                table_type < Agent::ROUTE_TABLE_MAX; table_type++) {
+            state->rt_export_[table_type] =
+                RouteExport::Init(
+                        static_cast<AgentRouteTable *>
+                        (vrf->GetRouteTable(table_type)),
+                        bgp_xmpp_peer);
         }
    }
 
@@ -119,10 +114,7 @@ void VrfExport::Notify(const Agent *agent, AgentXmppChannel *bgp_xmpp_peer,
 
             state->exported_ = true; 
             if (state->force_chg_ == true) {
-                if (vrf->GetName().compare(bgp_xmpp_peer->agent()->
-                                           fabric_vrf_name()) != 0) {
-                    bgp_peer->route_walker()->StartRouteWalk(vrf);
-                }
+                bgp_peer->route_walker()->StartRouteWalk(vrf);
                 state->force_chg_ = false;
             }
             return;

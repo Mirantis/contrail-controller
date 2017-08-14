@@ -134,7 +134,8 @@ protected:
     }
 
     void AddResolveRoute(const Ip4Address &server_ip, uint32_t plen) {
-        InetInterfaceKey vhost_key(agent_->vhost_interface()->name());
+        VmInterfaceKey vhost_key(AgentKey::ADD_DEL_CHANGE, nil_uuid(), 
+                                 agent_->vhost_interface()->name());
         agent_->fabric_inet4_unicast_table()->AddResolveRoute(
                 agent_->local_peer(),
                 agent_->fabric_vrf_name(), server_ip, plen, vhost_key,
@@ -249,8 +250,8 @@ protected:
         EXPECT_TRUE(ksync->proxy_arp());
         EXPECT_FALSE(ksync->flood());
         EXPECT_TRUE(vrf1_obj->RouteNeedsMacBinding(local_vm_rt));
-        EXPECT_TRUE(vrf1_obj->GetIpMacBinding(local_vm_rt->vrf(), local_vm_ip4_)
-                    != MacAddress());
+        EXPECT_TRUE(vrf1_obj->GetIpMacBinding(local_vm_rt->vrf(), local_vm_ip4_,
+                    NULL) != MacAddress());
         EXPECT_FALSE(l2_ksync->proxy_arp());
         EXPECT_FALSE(l2_ksync->flood());
 
@@ -279,8 +280,8 @@ protected:
         EXPECT_TRUE(remote_ksync->proxy_arp());
         EXPECT_FALSE(remote_ksync->flood());
         EXPECT_TRUE(vrf1_obj->RouteNeedsMacBinding(remote_vm_rt));
-        EXPECT_TRUE(vrf1_obj->GetIpMacBinding(remote_vm_rt->vrf(), remote_vm_ip4_)
-                    != MacAddress());
+        EXPECT_TRUE(vrf1_obj->GetIpMacBinding(remote_vm_rt->vrf(), remote_vm_ip4_,
+                    NULL) != MacAddress());
         EXPECT_FALSE(remote_l2_ksync->proxy_arp());
         EXPECT_FALSE(remote_l2_ksync->flood());
         //repeat same for subnet.

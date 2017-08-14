@@ -158,7 +158,7 @@ uint16_t ProtoHandler::UdpHdr(udphdr *udp, uint16_t buf_len, uint16_t len,
 
     FillUdpHdr(udp, len, src_port, dest_port);
 #ifdef VNSW_AGENT_UDP_CSUM
-    udp->check = UdpCsum(src, dest, len, pkt_info_->transp.udp);
+    udp->uh_sum = UdpCsum(src, dest, len, udp);
 #endif
 
     return sizeof(udphdr);
@@ -192,6 +192,14 @@ uint16_t ProtoHandler::IcmpHdr(char *buff, uint16_t buf_len, uint8_t type,
 void ProtoHandler::IcmpChecksum(char *buff, uint16_t buf_len) {
     struct icmp *hdr = ((struct icmp *)buff);
     hdr->icmp_cksum = Csum((uint16_t *)buff, buf_len, 0);
+}
+
+void ProtoHandler::UdpHdr(udphdr *udp ,uint16_t len, const uint8_t *src,
+                          uint16_t src_port, const uint8_t *dest,
+                          uint16_t dest_port, uint8_t next_hdr) {
+    FillUdpHdr(udp, len, src_port, dest_port);
+    pkt_info_->transp.udp->uh_sum = Ipv6Csum(src, dest, len, next_hdr,
+                                            (uint16_t *)pkt_info_->transp.udp);
 }
 
 void ProtoHandler::UdpHdr(uint16_t len, const uint8_t *src, uint16_t src_port,

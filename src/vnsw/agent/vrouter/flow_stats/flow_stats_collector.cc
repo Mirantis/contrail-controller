@@ -322,6 +322,11 @@ void FlowStatsCollector::UpdateVmiTagBasedStats(FlowExportInfo *info,
         ep.local_vn = src_vn;
         ep.remote_vn = dst_vn;
         ep.in_stats = true;
+        if (flow->is_flags_set(FlowEntry::ReverseFlow)) {
+            ep.client = false;
+        } else {
+            ep.client = true;
+        }
         itf_table->UpdateVmiTagBasedStats(ep);
 
         /* Local flows will not have egress flows in the system. So we need to
@@ -346,10 +351,20 @@ void FlowStatsCollector::UpdateVmiTagBasedStats(FlowExportInfo *info,
             ep.local_vn = src_vn;
             ep.remote_vn = dst_vn;
             ep.in_stats = true;
+            if (flow->is_flags_set(FlowEntry::ReverseFlow)) {
+                ep.client = false;
+            } else {
+                ep.client = true;
+            }
         } else {
             ep.local_vn = dst_vn;
             ep.remote_vn = src_vn;
             ep.in_stats = false;
+            if (flow->is_flags_set(FlowEntry::ReverseFlow)) {
+                ep.client = true;
+            } else {
+                ep.client = false;
+            }
         }
         itf_table->UpdateVmiTagBasedStats(ep);
     }
@@ -892,7 +907,14 @@ void FlowStatsCollector::SetImplicitFlowDetails(FlowExportInfo *info,
         s_flow.set_vm(rflow->data().vm_cfg_name);
         s_flow.set_sg_rule_uuid(rflow->sg_rule_uuid());
         if (rflow->intf_entry()) {
-            s_flow.set_vmi_uuid(UuidToString(rflow->intf_entry()->GetUuid()));
+            const VmInterface *vmi =
+                dynamic_cast<const VmInterface *>(rflow->intf_entry());
+            if (vmi) {
+                s_flow.set_vmi_uuid(UuidToString(vmi->vmi_cfg_uuid()));
+            } else {
+                s_flow.set_vmi_uuid(UuidToString(rflow->intf_entry()->
+                                                 GetUuid()));
+            }
         }
         s_flow.set_reverse_uuid(to_string(rflow->uuid()));
     } else if (params) {
@@ -1100,7 +1122,14 @@ void FlowStatsCollector::ExportFlow(FlowExportInfo *info,
         s_flow.set_sg_rule_uuid(flow->sg_rule_uuid());
         s_flow.set_nw_ace_uuid(flow->nw_ace_uuid());
         if (flow->intf_entry()) {
-            s_flow.set_vmi_uuid(UuidToString(flow->intf_entry()->GetUuid()));
+            const VmInterface *vmi =
+                dynamic_cast<const VmInterface *>(flow->intf_entry());
+            if (vmi) {
+                s_flow.set_vmi_uuid(UuidToString(vmi->vmi_cfg_uuid()));
+            } else {
+                s_flow.set_vmi_uuid(UuidToString(flow->intf_entry()->
+                                                 GetUuid()));
+            }
         }
 
         if (rflow) {

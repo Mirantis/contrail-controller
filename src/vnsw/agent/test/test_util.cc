@@ -209,6 +209,8 @@ static void BuildLinkToMetadata() {
     AddLinkToMetadata("project", "tag", "project-tag");
     AddLinkToMetadata("application-policy-set", "tag");
     AddLinkToMetadata("policy-management", "application-policy-set");
+    AddLinkToMetadata("virtual-network", "virtual-network",
+                      "virtual-network-provider-network");
 }
 
 string GetMetadata(const char *node1, const char *node2,
@@ -251,7 +253,13 @@ void AddLinkString(char *buff, int &len, const char *node_name1,
 
 void DelLinkString(char *buff, int &len, const char *node_name1,
                    const char *name1, const char *node_name2,
-                   const char *name2) {
+                   const char *name2, const char* mdata) {
+    const char *mdata_value = NULL;
+    if (!mdata) {
+        mdata_value = GetMetadata(node_name1, node_name2).c_str();
+    } else {
+        mdata_value = mdata;
+    }
     sprintf(buff + len,
             "       <link>\n"
             "           <node type=\"%s\">\n"
@@ -261,8 +269,8 @@ void DelLinkString(char *buff, int &len, const char *node_name1,
             "               <name>%s</name>\n"
             "           </node>\n"
             "           <metadata type=\"%s\"/>\n"
-            "       </link>\n", node_name1, name1, node_name2, name2, 
-            GetMetadata(node_name1, node_name2).c_str());
+            "       </link>\n", node_name1, name1, node_name2, name2,
+            mdata_value);
     len = strlen(buff);
 }
 
@@ -459,12 +467,12 @@ void AddLink(const char *node_name1, const char *name1,
 }
 
 void DelLink(const char *node_name1, const char *name1,
-             const char *node_name2, const char *name2) {
+             const char *node_name2, const char *name2, const char* mdata) {
     char buff[1024];
     int len = 0;
 
     DelXmlHdr(buff, len);
-    DelLinkString(buff, len, node_name1, name1, node_name2, name2);
+    DelLinkString(buff, len, node_name1, name1, node_name2, name2, mdata);
     DelXmlTail(buff, len);
     //LOG(DEBUG, buff);
     ApplyXmlString(buff);
@@ -580,7 +588,8 @@ bool PortSubscribe(const std::string &ifname,
                             vmi_uuid, vm_uuid, vm_name, vn_uuid, project_uuid,
                             ip4_addr, ip6_addr, mac_addr,
                             VmInterface::kInvalidVlanId,
-                            VmInterface::kInvalidVlanId);
+                            VmInterface::kInvalidVlanId,
+                            VmInterface::vHostUserClient);
     return PortSubscribe(&entry);
 }
 
@@ -603,7 +612,7 @@ void IntfSyncMsg(PortInfo *input, int id) {
 
 void IntfCfgAdd(int intf_id, const string &name, const string ipaddr,
                 int vm_id, int vn_id, const string &mac, uint16_t vlan,
-                const string ip6addr, int project_id) {
+                const string ip6addr, uint8_t vhostuser_mode, int project_id) {
     boost::system::error_code ec;
     Ip4Address ip = Ip4Address::from_string(ipaddr, ec);
     char vm_name[MAX_TESTNAME_LEN];
@@ -616,7 +625,7 @@ void IntfCfgAdd(int intf_id, const string &name, const string ipaddr,
     VmiSubscribeEntry entry(PortSubscribeEntry::VMPORT, name, 0,
                             MakeUuid(intf_id), MakeUuid(vm_id), vm_name,
                             MakeUuid(vn_id), MakeUuid(project_id), ip, ip6,
-                            mac, vlan, vlan);
+                            mac, vlan, vlan, vhostuser_mode);
     string json;
     Agent *agent = Agent::GetInstance();
     agent->port_ipc_handler()->MakeVmiUuidJson(&entry, json, false);
@@ -629,7 +638,8 @@ void IntfCfgAdd(int intf_id, const string &name, const string ipaddr,
                 int vm_id, int vn_id, const string &mac,
                 const string ip6addr) {
     IntfCfgAdd(intf_id, name, ipaddr, vm_id, vn_id, mac,
-               VmInterface::kInvalidVlanId, ip6addr);
+               VmInterface::kInvalidVlanId, ip6addr,
+               VmInterface::vHostUserClient);
 }
 
 void IntfCfgAdd(PortInfo *input, int id) {
@@ -869,6 +879,11 @@ InetInterface *InetInterfaceGet(const char *ifname) {
 
 Interface *VmPortGet(int id) {
     VmInterfaceKey key(AgentKey::ADD_DEL_CHANGE, MakeUuid(id), "");
+    return static_cast<Interface *>(Agent::GetInstance()->interface_table()->Find(&key, false));
+}
+
+Interface *VhostGet(const char *ifname) {
+    VmInterfaceKey key(AgentKey::ADD_DEL_CHANGE, nil_uuid(), ifname);
     return static_cast<Interface *>(Agent::GetInstance()->interface_table()->Find(&key, false));
 }
 
@@ -2777,12 +2792,13 @@ void DelHealthCheckService(const char *name) {
 
 void AddHealthCheckService(const char *name, int id,
                            const char *url_path,
-                           const char *monitor_type) {
+                           const char *monitor_type,
+                           const char *service_type) {
     char buf[1024];
 
     sprintf(buf, "<service-health-check-properties>"
                  "    <enabled>false</enabled>"
-                 "    <health-check-type>end-to-end</health-check-type>"
+                 "    <health-check-type>%s</health-check-type>"
                  "    <monitor-type>%s</monitor-type>"
                  "    <delay>5</delay>"
                  "    <timeout>5</timeout>"
@@ -2790,7 +2806,8 @@ void AddHealthCheckService(const char *name, int id,
                  "    <http-method></http-method>"
                  "    <url-path>%s</url-path>"
                  "    <expected-codes></expected-codes>"
-                 "</service-health-check-properties>", monitor_type, url_path);
+                 "</service-health-check-properties>", service_type,
+                 monitor_type, url_path);
     AddNode("service-health-check", name, id, buf);
 }
 

@@ -491,6 +491,7 @@ void Agent::CopyConfig(AgentParam *params) {
     tsn_enabled_ = params_->isTsnAgent();
     tor_agent_enabled_ = params_->isTorAgent();
     server_gateway_mode_ = params_->isServerGatewayMode();
+    vcpe_gateway_mode_ = params_->isVcpeGatewayMode();
     flow_thread_count_ = params_->flow_thread_count();
     flow_trace_enable_ = params_->flow_trace_enable();
     flow_add_tokens_ = params_->flow_add_tokens();
@@ -632,6 +633,9 @@ void Agent::InitPeers() {
     mac_learning_peer_.reset(new Peer(Peer::MAC_LEARNING_PEER,
                                       MAC_LEARNING_PEER_NAME,
                                       false));
+    fabric_rt_export_peer_.reset(new Peer(Peer::LOCAL_VM_PEER,
+                                          FABRIC_RT_EXPORT,
+                                          true));
 }
 
 void Agent::ReconfigSignalHandler(boost::system::error_code ec, int signum) {
@@ -918,7 +922,7 @@ void Agent::ConcurrencyCheck() {
        CHECK_CONCURRENCY("db::DBTable", "Agent::KSync", AGENT_INIT_TASKNAME,
                          kTaskFlowMgmt, kTaskFlowUpdate,
                          kTaskFlowEvent, kTaskFlowDelete, kTaskFlowKSync,
-                         kTaskHealthCheck);
+                         kTaskHealthCheck, kAgentResourceRestoreTask);
     }
 }
 

@@ -242,7 +242,8 @@ public:
         INVALID,
         MPLS_GRE,
         MPLS_UDP,
-        VXLAN
+        VXLAN,
+        NATIVE
     };
     // Bitmap of supported tunnel types
     typedef uint32_t TypeBmap;
@@ -265,6 +266,8 @@ public:
            return "MPLSoUDP";
        case VXLAN:
            return "VXLAN";
+       case NATIVE:
+           return "Native";
        default:
            break;
        }
@@ -284,6 +287,11 @@ public:
         if (type & ( 1 << VXLAN)) {
             tunnel_type << "VxLAN";
         }
+
+        if (type & (1 << NATIVE)) {
+            tunnel_type << "Underlay";
+        }
+
         return tunnel_type.str();
     }
 
@@ -308,6 +316,7 @@ public:
                                        (1 << VXLAN));}
     static TypeBmap GREType() {return (1 << MPLS_GRE);}
     static TypeBmap UDPType() {return (1 << MPLS_UDP);}
+    static TypeBmap NativeType() {return (1 << NATIVE);}
     static bool EncapPrioritySync(const std::vector<std::string> &cfg_list);
     static void DeletePriorityList();
 
@@ -662,8 +671,10 @@ public:
     };
 
     static void CreateReq(const string &interface);
-    static void Create(NextHopTable *table, const string &interface);
-    static void Delete(NextHopTable *table, const string &interface);
+    static void Create(NextHopTable *table, const Interface *intf,
+                       bool policy);
+    static void Delete(NextHopTable *table, const Interface *intf,
+                       bool policy);
     const Interface *GetInterface() const {return interface_.get();};
 
     virtual bool MatchEgressData(const NextHop *nh) const {
@@ -1114,25 +1125,33 @@ public:
 
     static void CreateMulticastVmInterfaceNH(const uuid &intf_uuid,
                                              const MacAddress &dmac,
-                                             const string &vrf_name);
-    static void DeleteMulticastVmInterfaceNH(const uuid &intf_uuid);
+                                             const string &vrf_name,
+                                             const string &intf_name);
+    static void DeleteMulticastVmInterfaceNH(const uuid &intf_uuid,
+                                             const std::string &intf_name);
     static void CreateL2VmInterfaceNH(const uuid &intf_uuid,
                                       const MacAddress &dmac,
                                       const string &vrf_name,
                                       bool learning_enabled,
                                       bool etree_leaf,
-                                      bool layer2_control_word);
+                                      bool layer2_control_word,
+                                      const std::string &intf_name);
     static void DeleteL2InterfaceNH(const uuid &intf_uuid,
-                                    const MacAddress &mac);
+                                    const MacAddress &mac,
+                                    const std::string &intf_name);
     static void CreateL3VmInterfaceNH(const uuid &intf_uuid,
                                       const MacAddress &dmac,
                                       const string &vrf_name,
-                                      bool learning_enabled);
+                                      bool learning_enabled,
+                                      const std::string &intf_name);
     static void DeleteL3InterfaceNH(const uuid &intf_uuid,
-                                    const MacAddress &mac);
+                                    const MacAddress &mac,
+                                    const std::string &intf_name);
     static void DeleteNH(const uuid &intf_uuid, bool policy, uint8_t flags,
-                         const MacAddress &mac);
-    static void DeleteVmInterfaceNHReq(const uuid &intf_uuid, const MacAddress &mac);
+                         const MacAddress &mac, const std::string &intf_name);
+    static void DeleteVmInterfaceNHReq(const uuid &intf_uuid,
+                                       const MacAddress &mac,
+                                       const std::string &intf_name);
     static void CreatePacketInterfaceNh(Agent *agent, const string &ifname);
     static void DeleteHostPortReq(Agent *agent, const string &ifname);
     static void CreateInetInterfaceNextHop(const string &ifname,

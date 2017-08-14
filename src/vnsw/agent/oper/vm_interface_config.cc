@@ -13,6 +13,7 @@
 #include <oper/sg.h>
 #include <oper/tag.h>
 #include <oper/bgp_as_service.h>
+#include <init/agent_param.h>
 #include "ifmap/ifmap_link.h"
 
 #include <port_ipc/port_ipc_handler.h>
@@ -497,7 +498,6 @@ static void BuildVrfAndServiceVlanInfo(Agent *agent,
 // Note: Right interface of in-network-nat will not have vrf-assign
 static void BuildProxyArpFlags(Agent *agent, VmInterfaceConfigData *data,
                                VirtualMachineInterface *cfg) {
-    data->proxy_arp_mode_ = VmInterface::PROXY_ARP_NONE;
     if (cfg->vrf_assign_table().size() == 0)
         return;
 
@@ -706,6 +706,48 @@ static bool BuildBridgeDomainVnTable(Agent *agent,
     return false;
 }
 
+static void BuildSiOtherVmi(Agent *agent, VmInterfaceConfigData *data,
+                            IFMapNode *node, const string &s_intf_type) {
+    PortTuple *entry = static_cast<PortTuple*>(node->GetObject());
+    assert(entry);
+
+    IFMapAgentTable *table = static_cast<IFMapAgentTable *>(node->table());
+    DBGraph *graph = table->GetGraph();
+
+    for (DBGraphVertex::adjacency_iterator iter = node->begin(graph);
+         iter != node->end(graph); ++iter) {
+
+        IFMapNode *adj_node = static_cast<IFMapNode *>(iter.operator->());
+        if (agent->config_manager()->SkipNode(adj_node)) {
+            continue;
+        }
+        if (adj_node->table() != agent->cfg()->cfg_vm_interface_table()) {
+            continue;
+        }
+        VirtualMachineInterface *cfg = static_cast <VirtualMachineInterface *>
+            (adj_node->GetObject());
+        if (!cfg->IsPropertySet(VirtualMachineInterface::PROPERTIES)) {
+            continue;
+        }
+
+        string interface_to_find = "right";
+        if (s_intf_type == "right") {
+            interface_to_find = "left";
+        }
+        const string &cfg_intf_type = cfg->properties().service_interface_type;
+        if (cfg_intf_type != interface_to_find) {
+            continue;
+        }
+
+        data->si_other_end_vmi = nil_uuid();
+        autogen::IdPermsType id_perms = cfg->id_perms();
+        CfgUuidSet(id_perms.uuid.uuid_mslong, id_perms.uuid.uuid_lslong,
+                   data->si_other_end_vmi);
+        /* No further iterations required for setting data->si_other_end_vmi */
+        break;
+    }
+}
+
 // Build VM Interface bridge domain link
 static void BuildBridgeDomainTable(Agent *agent,
                                    VmInterfaceConfigData *data,
@@ -801,6 +843,13 @@ static void BuildVn(VmInterfaceConfigData *data,
             iter != node->end(table->GetGraph()); ++iter) {
 
         IFMapNode *adj_node = static_cast<IFMapNode *>(iter.operator->());
+        if (agent->config_manager()->CanUseNode(adj_node,
+                                                agent->cfg()->cfg_vn_table())) {
+            if (adj_node->name() == agent->fabric_vn_name()) {
+                data->proxy_arp_mode_ = VmInterface::PROXY_ARP_UNRESTRICTED;
+            }
+        }
+
         if (agent->config_manager()->SkipNode(adj_node,
                                               agent->cfg()->cfg_tag_table())) {
             continue;
@@ -1271,6 +1320,7 @@ bool InterfaceTable::VmiProcessConfig(IFMapNode *node, DBRequest &req,
     VirtualMachineInterface *cfg = static_cast <VirtualMachineInterface *>
         (node->GetObject());
 
+    boost::uuids::uuid vmi_uuid = u;
     assert(cfg);
     // Handle object delete
     if (node->IsDeleted()) {
@@ -1298,7 +1348,17 @@ bool InterfaceTable::VmiProcessConfig(IFMapNode *node, DBRequest &req,
     VmInterface::TagEntryList vm_list;
     VmInterface::TagEntryList vn_list;
     VmInterface::TagEntryList project_list;
+    string service_intf_type = "";
 
+    if (cfg->IsPropertySet(VirtualMachineInterface::PROPERTIES)) {
+        service_intf_type = cfg->properties().service_interface_type;
+        /* Overwrite service_intf_type if it is not left or right interface */
+        if (service_intf_type != "left" && service_intf_type != "right") {
+            service_intf_type = "";
+        }
+    }
+
+    data->vmi_cfg_uuid_ = vmi_uuid;
     std::list<IFMapNode *> bgp_as_a_service_node_list;
     for (DBGraphVertex::adjacency_iterator iter =
          node->begin(table->GetGraph()); 
@@ -1395,6 +1455,12 @@ bool InterfaceTable::VmiProcessConfig(IFMapNode *node, DBRequest &req,
         if (adj_node->table() == agent_->cfg()->cfg_vm_port_bridge_domain_table()) {
             BuildBridgeDomainTable(agent_, data, adj_node);
         }
+
+        if (adj_node->table() == agent_->cfg()->cfg_port_tuple_table()) {
+            if (!service_intf_type.empty()) {
+                BuildSiOtherVmi(agent_, data, adj_node, service_intf_type);
+            }
+        }
     }
 
     agent_->oper_db()->bgp_as_a_service()->ProcessConfig
@@ -1427,13 +1493,20 @@ bool InterfaceTable::VmiProcessConfig(IFMapNode *node, DBRequest &req,
     ComputeTypeInfo(agent_, data, subscribe_entry.get(), prouter, node,
                     li_node);
 
+    if (cfg->display_name() == agent_->vhost_interface_name()) {
+        data->CopyVhostData(agent());
+        vmi_uuid = nil_uuid();
+    }
+
     InterfaceKey *key = NULL; 
-    if (data->device_type_ == VmInterface::VM_ON_TAP ||
-        data->device_type_ == VmInterface::DEVICE_TYPE_INVALID) {
+    if (cfg->display_name() == agent_->vhost_interface_name()) {
+        key = new VmInterfaceKey(AgentKey::RESYNC, vmi_uuid, cfg->display_name());
+    } else if (data->device_type_ == VmInterface::VM_ON_TAP ||
+                    data->device_type_ == VmInterface::DEVICE_TYPE_INVALID) {
         key = new VmInterfaceKey(AgentKey::RESYNC, u, "");
     } else {
-        key = new VmInterfaceKey(AgentKey::ADD_DEL_CHANGE, u,
-                                 cfg->display_name());
+        key = new VmInterfaceKey(AgentKey::ADD_DEL_CHANGE, vmi_uuid,
+                cfg->display_name());
     }
 
     if (data->device_type_ != VmInterface::DEVICE_TYPE_INVALID) {

@@ -50,7 +50,7 @@ public:
         short_flow(false), local_flow(false), linklocal_flow(false),
         tcp_ack(false), linklocal_bind_local_port(false),
         linklocal_src_port_fd(kLinkLocalInvalidFd),
-        ecmp(false), out_component_nh_idx(-1),
+        ecmp(false), out_component_nh_idx(-1), disable_validation(false),
         fip_snat(false), fip_dnat(false), snat_fip(),
         short_flow_reason(0), peer_vrouter(), tunnel_type(TunnelType::INVALID),
         flood_unknown_unicast(false), bgp_router_service_flow(false),
@@ -111,6 +111,8 @@ public:
                                    uint32_t sport,
                                    uint32_t dport,
                                    const Interface *intf);
+    void OverlayForwarding(const VmInterface *intf, const PktInfo *pkt,
+                           PktControlInfo *in, PktControlInfo *out);
 public:
     void UpdateRoute(const AgentRoute **rt, const VrfEntry *vrf,
                      const IpAddress &addr, const MacAddress &mac,
@@ -172,6 +174,9 @@ public:
 
     bool                ecmp;
     uint32_t            out_component_nh_idx;
+
+    // Ignore validations for specific flows, like BFD health check
+    bool                disable_validation;
 
     // Following fields are required for FIP stats accounting
     bool                fip_snat;

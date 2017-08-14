@@ -136,18 +136,6 @@ static uint32_t NhToVrf(const NextHop *nh) {
     return vrf->vrf_id();
 }
 
-static const NextHop* GetPolicyDisabledNH(NextHopTable *nh_table,
-                                          const NextHop *nh) {
-    if (nh->PolicyEnabled() == false) {
-        return nh;
-    }
-    DBEntryBase::KeyPtr key = nh->GetDBRequestKey();
-    NextHopKey *nh_key = static_cast<NextHopKey *>(key.get());
-    nh_key->SetPolicy(false);
-    return static_cast<const NextHop *>
-        (nh_table->FindActiveEntryNoLock(key.get()));
-}
-
 static bool IsVgwOrVmInterface(const Interface *intf) {
     if (intf->type() == Interface::VM_INTERFACE)
         return true;
@@ -233,7 +221,6 @@ static bool NhDecode(const Agent *agent, const NextHop *nh, const PktInfo *pkt,
         return false;
     }
 
-    NextHopTable *nh_table = info->agent->nexthop_table();
     // Pick out going attributes based on the NH selected above
     switch (nh->GetType()) {
     case NextHop::INTERFACE:
@@ -271,7 +258,10 @@ static bool NhDecode(const Agent *agent, const NextHop *nh, const PktInfo *pkt,
         assert(info->l3_flow == true);
         out->intf_ = static_cast<const ReceiveNH *>(nh)->GetInterface();
         out->vrf_ = out->intf_->vrf();
-        out->nh_ = GetPolicyDisabledNH(nh_table, nh)->id();
+        if (out->intf_->vrf()->forwarding_vrf()) {
+            out->vrf_ = out->intf_->vrf()->forwarding_vrf();
+        }
+        out->nh_ = out->intf_->flow_key_nh()->id();
         break;
 
     case NextHop::VLAN: {
@@ -357,13 +347,16 @@ static bool NhDecode(const Agent *agent, const NextHop *nh, const PktInfo *pkt,
         if (in->intf_->type() == Interface::VM_INTERFACE) {
             const VmInterface *vm_intf =
                 static_cast<const VmInterface *>(in->intf_);
-            if (vm_intf->device_type() == VmInterface::LOCAL_DEVICE) {
+            if (vm_intf->vmi_type() == VmInterface::VHOST) {
+                out->nh_ = in->intf_->flow_key_nh()->id();
+                out->intf_ = in->intf_;
+            } else if (vm_intf->device_type() == VmInterface::LOCAL_DEVICE) {
                 out->nh_ = arp_nh->id();
-            } else if (arp_nh->GetInterface()->flow_key_nh()) {
-                out->nh_ = arp_nh->GetInterface()->flow_key_nh()->id();
+                out->intf_ = arp_nh->GetInterface();
             }
+        } else {
+            out->intf_ = arp_nh->GetInterface();
         }
-        out->intf_ = arp_nh->GetInterface();
         out->vrf_ = arp_nh->GetVrf();
         break;
     }
@@ -697,7 +690,8 @@ void PktFlowInfo::LinkLocalServiceFromHost(const PktInfo *pkt, PktControlInfo *i
 
 void PktFlowInfo::LinkLocalServiceTranslate(const PktInfo *pkt, PktControlInfo *in,
                                             PktControlInfo *out) {
-    if (in->intf_->type() == Interface::VM_INTERFACE) {
+    const VmInterface *vm_intf = dynamic_cast<const VmInterface *>(in->intf_);
+    if (vm_intf->vmi_type() != VmInterface::VHOST) {
         LinkLocalServiceFromVm(pkt, in, out);
     } else {
         LinkLocalServiceFromHost(pkt, in, out);
@@ -796,7 +790,7 @@ void PktFlowInfo::ProcessHealthCheckFatFlow(const VmInterface *vmi,
         return;
 
     // Look for health-check rule
-    const HealthCheckInstance *hc_instance =
+    const HealthCheckInstanceBase *hc_instance =
         vmi->GetHealthCheckFromVmiFlow(pkt->ip_saddr, pkt->ip_daddr,
                                        pkt->ip_proto, pkt->sport);
     if (hc_instance == NULL)
@@ -1055,6 +1049,42 @@ void PktFlowInfo::FloatingIpSNat(const PktInfo *pkt, PktControlInfo *in,
     return;
 }
 
+void PktFlowInfo::OverlayForwarding(const VmInterface *intf, const PktInfo *pkt,
+                                    PktControlInfo *in, PktControlInfo *out) {
+
+    if (nat_done) {
+        return;
+    }
+
+    //Do route lookup in policy VRF and if the tunnel encap list
+    //doesnt support fabric forwarding, we will do vrf translate
+    //and do forwarding in overlay network
+     AgentRoute *src_rt = FlowEntry::GetUcRoute(intf->vrf(), pkt->ip_saddr);
+     AgentRoute *dst_rt = FlowEntry::GetUcRoute(intf->vrf(), pkt->ip_daddr);
+
+     if (src_rt == NULL || dst_rt == NULL) {
+         return;
+     }
+
+     uint32_t src_tunnel_bmap = src_rt->GetActivePath()->tunnel_bmap();
+     uint32_t dst_tunnel_bmap = dst_rt->GetActivePath()->tunnel_bmap();
+
+     if ((src_tunnel_bmap & (1 << TunnelType::NATIVE)) &&
+         (dst_tunnel_bmap & (1 << TunnelType::NATIVE))) {
+         //Use native forwarding, no change
+         return;
+     }
+
+     const VrfEntry *vrf = intf->vrf();
+     ChangeVrf(pkt, out, vrf);
+     dest_vrf = vrf->vrf_id();
+     alias_ip_flow = true;
+     UpdateRoute(&out->rt_, vrf, pkt->ip_daddr, pkt->dmac,
+                 flow_dest_plen_map);
+     UpdateRoute(&in->rt_, vrf, pkt->ip_saddr, pkt->smac,
+                 flow_source_plen_map);
+}
+
 bool PktFlowInfo::VrfTranslate(const PktInfo *pkt, PktControlInfo *in,
                                PktControlInfo *out, const IpAddress &src_ip,
                                bool nat_flow) {
@@ -1072,6 +1102,11 @@ bool PktFlowInfo::VrfTranslate(const PktInfo *pkt, PktControlInfo *in,
     //If interface has a VRF assign rule, choose the acl and match the
     //packet, else get the acl attached to VN and try matching the packet to
     //network acl
+
+    if (vm_intf->vrf() != vm_intf->forwarding_vrf()) {
+        OverlayForwarding(vm_intf, pkt, in, out);
+    }
+
     const AclDBEntry *acl = NULL;
     if (nat_flow == false) {
         acl = vm_intf->vrf_assign_acl();
@@ -1437,8 +1472,21 @@ bool PktFlowInfo::UnknownUnicastFlow(const PktInfo *pkt,
     return ret;
 }
 
+// Ignore in case of BFD health check
+bool IsValidationDisabled(Agent *agent, const PktInfo *pkt,
+                          const Interface *interface) {
+    if (!interface)
+        return false;
+    return ((agent->pkt()->pkt_handler()->
+             IsBFDHealthCheckPacket(pkt, interface)) ||
+            (agent->pkt()->pkt_handler()->
+             IsSegmentHealthCheckPacket(pkt, interface)));
+}
+
 // Basic config validations for the flow
 bool PktFlowInfo::ValidateConfig(const PktInfo *pkt, PktControlInfo *in) {
+    disable_validation = IsValidationDisabled(agent, pkt, in->intf_);
+
     if (agent->tsn_enabled()) {
         short_flow = true;
         short_flow_reason = FlowEntry::SHORT_FLOW_ON_TSN;
@@ -1453,7 +1501,7 @@ bool PktFlowInfo::ValidateConfig(const PktInfo *pkt, PktControlInfo *in) {
     }
 
     const VmInterface *vm_intf = dynamic_cast<const VmInterface *>(in->intf_);
-    if (l3_flow == true) {
+    if (l3_flow == true && !disable_validation) {
         if (vm_intf && in->intf_->ip_active(pkt->family) == false) {
             in->intf_ = NULL;
             LogError(pkt, this, "IP protocol inactive on interface");
@@ -1470,7 +1518,7 @@ bool PktFlowInfo::ValidateConfig(const PktInfo *pkt, PktControlInfo *in) {
         }
     }
 
-    if (l3_flow == false) {
+    if (l3_flow == false && !disable_validation) {
         if (in->intf_->l2_active() == false) {
             in->intf_ = NULL;
             LogError(pkt, this, "L2 inactive on interface");
@@ -1524,25 +1572,30 @@ bool PktFlowInfo::Process(const PktInfo *pkt, PktControlInfo *in,
         }
     }
 
-    if (in->rt_ == NULL) {
-        LogError(pkt, this, "Flow : No route for Src-IP");
-        short_flow = true;
-        short_flow_reason = FlowEntry::SHORT_NO_SRC_ROUTE;
-        return false;
-    }
+    if (!disable_validation) {
+        if (in->rt_ == NULL) {
+            LogError(pkt, this, "Flow : No route for Src-IP");
+            short_flow = true;
+            short_flow_reason = FlowEntry::SHORT_NO_SRC_ROUTE;
+            return false;
+        }
 
-    if (out->rt_ == NULL) {
-        LogError(pkt, this, "Flow : No route for Dst-IP");
-        short_flow = true;
-        short_flow_reason = FlowEntry::SHORT_NO_DST_ROUTE;
-        return false;
+        if (out->rt_ == NULL) {
+            LogError(pkt, this, "Flow : No route for Dst-IP");
+            short_flow = true;
+            short_flow_reason = FlowEntry::SHORT_NO_DST_ROUTE;
+            return false;
+        }
+
+        flow_source_vrf = static_cast<const AgentRoute *>(in->rt_)->vrf_id();
+        flow_dest_vrf = out->rt_->vrf_id();
+    } else {
+        flow_source_vrf = flow_dest_vrf = in->vrf_->vrf_id();
     }
-    flow_source_vrf = static_cast<const AgentRoute *>(in->rt_)->vrf_id();
-    flow_dest_vrf = out->rt_->vrf_id();
 
     //If source is ECMP, establish a reverse flow pointing
     //to the component index
-    if (in->rt_->GetActiveNextHop() &&
+    if (in->rt_ && in->rt_->GetActiveNextHop() &&
         in->rt_->GetActiveNextHop()->GetType() == NextHop::COMPOSITE) {
         ecmp = true;
     }

@@ -294,8 +294,13 @@ bool AgentPath::Sync(AgentRoute *sync_route) {
     } else if (rt->GetActiveNextHop()->GetType() == NextHop::RESOLVE) {
         const ResolveNH *nh =
             static_cast<const ResolveNH *>(rt->GetActiveNextHop());
+        std::string nexthop_vrf = nh->interface()->vrf()->GetName();
+        if (nh->interface()->vrf()->forwarding_vrf()) {
+            nexthop_vrf = nh->interface()->vrf()->forwarding_vrf()->GetName();
+        }
+
         assert(gw_ip_.is_v4());
-        table->AddArpReq(vrf_name_, gw_ip_.to_v4(), nh->interface()->vrf()->GetName(),
+        table->AddArpReq(vrf_name_, gw_ip_.to_v4(), nexthop_vrf,
                          nh->interface(), nh->PolicyEnabled(), dest_vn_list_,
                          sg_list_, tag_list_);
         unresolved = true;
@@ -312,6 +317,9 @@ bool AgentPath::Sync(AgentRoute *sync_route) {
     if (dependant_rt_.get() != rt) {
         dependant_rt_.reset(rt);
         ret = true;
+        if (rt) {
+            set_tunnel_bmap(dependant_rt_->GetActivePath()->tunnel_bmap());
+        }
     }
     return ret;
 }
@@ -647,7 +655,7 @@ bool LocalVmRoute::AddChangePathExtended(Agent *agent, AgentPath *path,
     CommunityList path_communities;
 
     //TODO Based on key table type pick up interface
-    VmInterfaceKey intf_key(AgentKey::ADD_DEL_CHANGE, intf_.uuid_, "");
+    VmInterfaceKey intf_key(AgentKey::ADD_DEL_CHANGE, intf_.uuid_, intf_.name_);
     VmInterface *vm_port = static_cast<VmInterface *>
         (agent->interface_table()->FindActiveEntry(&intf_key));
 
@@ -658,6 +666,16 @@ bool LocalVmRoute::AddChangePathExtended(Agent *agent, AgentPath *path,
             policy = true;
             ret = true;
         }
+    }
+
+    if (vm_port && vm_port->vrf() &&
+        vm_port->vrf()->forwarding_vrf() == agent->fabric_vrf()) {
+        tunnel_bmap_ |= (1 << TunnelType::NATIVE);
+    }
+
+    if (tunnel_bmap_ != path->tunnel_bmap()) {
+        path->set_tunnel_bmap(tunnel_bmap_);
+        ret = true;
     }
 
     path->set_tunnel_bmap(tunnel_bmap_);
@@ -957,7 +975,7 @@ bool ReceiveRoute::AddChangePathExtended(Agent *agent, AgentPath *path,
     NextHop *nh = NULL;
 
     //TODO check if it needs to know table type
-    ReceiveNHKey key(intf_.Clone(), policy_);
+    ReceiveNHKey key(intf_->Clone(), policy_);
     nh = static_cast<NextHop *>(agent->nexthop_table()->FindActiveEntry(&key));
     path->set_unresolved(false);
 
@@ -972,6 +990,8 @@ bool ReceiveRoute::AddChangePathExtended(Agent *agent, AgentPath *path,
         path->set_label(label_);
         ret = true;
     }
+
+    path->set_tunnel_bmap(tunnel_bmap_);
 
     if (path->ChangeNH(agent, nh) == true)
         ret = true;

@@ -359,7 +359,7 @@ public:
     MirrorEntry *FindMirrorRef(const std::string &name) const;
 
     // Interface index managing routines
-    void FreeInterfaceId(size_t index) { index_table_.Remove(index); }
+    void FreeInterfaceId(size_t index);
     Interface *FindInterface(size_t index);
     Interface *FindInterfaceFromMetadataIp(const Ip4Address &ip);
 
@@ -412,6 +412,8 @@ public:
     uint32_t pi_ifnode_to_req() const { return pi_ifnode_to_req_; }
     //Shutdown
     virtual void Clear();
+    void CreateVhost();
+    void CreateVhostReq();
 
 private:
     bool L2VmInterfaceWalk(DBTablePartBase *partition,

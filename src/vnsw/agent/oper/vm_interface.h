@@ -114,7 +114,7 @@ struct VmInterfaceMirrorData;
 class OperDhcpOptions;
 class PathPreference;
 class MetaDataIp;
-class HealthCheckInstance;
+class HealthCheckInstanceBase;
 
 class LocalVmPortPeer;
 class VmInterface;
@@ -268,6 +268,8 @@ struct NextHopState : public VmInterfaceState {
     mutable NextHopRef l3_nh_policy_;
     mutable NextHopRef l3_nh_no_policy_;
     mutable uint32_t l3_label_;
+
+    mutable NextHopRef receive_nh_;
 };
 
 struct MetaDataIpState : public VmInterfaceState {
@@ -351,6 +353,8 @@ public:
     static const uint32_t kInvalidVlanId = 0xFFFF;
     static const uint32_t kInvalidPmdId = 0xFFFF;
     static const uint32_t kInvalidIsid = 0xFFFFFF;
+    static const uint8_t vHostUserClient = 0;
+    static const uint8_t vHostUserServer = 1;
 
     enum Configurer {
         INSTANCE_MSG,
@@ -385,7 +389,8 @@ public:
         BAREMETAL,
         GATEWAY,
         REMOTE_VM,
-        SRIOV
+        SRIOV,
+        VHOST
     };
 
     // Interface uses different type of labels. Enumeration of different
@@ -406,7 +411,7 @@ public:
     };
 
     typedef std::map<Ip4Address, MetaDataIp*> MetaDataIpMap;
-    typedef std::set<HealthCheckInstance *> HealthCheckInstanceSet;
+    typedef std::set<HealthCheckInstanceBase *> HealthCheckInstanceSet;
 
     struct List {
     };
@@ -960,6 +965,48 @@ public:
         BridgeDomainEntrySet list_;
     };
 
+    struct VmiReceiveRoute : ListEntry, VmInterfaceState {
+        VmiReceiveRoute();
+        VmiReceiveRoute(const VmiReceiveRoute &rhs);
+        VmiReceiveRoute(const IpAddress &addr, uint32_t plen, bool add_l2);
+        virtual ~VmiReceiveRoute() {}
+
+        bool operator() (const VmiReceiveRoute &lhs,
+                         const VmiReceiveRoute &rhs) const;
+        bool IsLess(const VmiReceiveRoute *rhs) const;
+
+        VmInterfaceState::Op GetOpL2(const Agent *agent,
+                const VmInterface *vmi) const;
+        bool DeleteL2(const Agent *agent, VmInterface *vmi) const;
+        bool AddL2(const Agent *agent, VmInterface *vmi) const;
+
+        void Copy(const Agent *agent, const VmInterface *vmi) const;
+        VmInterfaceState::Op GetOpL3(const Agent *agent,
+                                     const VmInterface *vmi) const;
+        bool AddL3(const Agent *agent, VmInterface *vmi) const;
+        bool DeleteL3(const Agent *agent, VmInterface *vmi) const;
+
+        IpAddress  addr_;
+        uint32_t   plen_;
+        bool       add_l2_; //Pick mac from interface and then add l2 route
+        mutable VrfEntryRef vrf_;
+    };
+
+    typedef std::set<VmiReceiveRoute, VmiReceiveRoute> VmiReceiveRouteSet;
+
+    struct VmiReceiveRouteList : List {
+        VmiReceiveRouteList() : List(), list_() { }
+        ~VmiReceiveRouteList() { }
+        void Insert(const VmiReceiveRoute *rhs);
+        void Update(const VmiReceiveRoute *lhs, const VmiReceiveRoute *rhs);
+        void Remove(VmiReceiveRouteSet::iterator &it);
+
+        bool UpdateList(const Agent *agent, VmInterface *vmi,
+                        VmInterfaceState::Op l2_force_op,
+                        VmInterfaceState::Op l3_force_op);
+        VmiReceiveRouteSet list_;
+    };
+
     enum Trace {
         ADD,
         DELETE,
@@ -973,13 +1020,14 @@ public:
         SERVICE_CHANGE,
     };
 
-    VmInterface(const boost::uuids::uuid &uuid);
+    VmInterface(const boost::uuids::uuid &uuid, const std::string &name);
     VmInterface(const boost::uuids::uuid &uuid, const std::string &name,
                 const Ip4Address &addr, const MacAddress &mac,
                 const std::string &vm_name,
                 const boost::uuids::uuid &vm_project_uuid, uint16_t tx_vlan_id,
                 uint16_t rx_vlan_id, Interface *parent,
-                const Ip6Address &addr6, DeviceType dev_type, VmiType vmi_type);
+                const Ip6Address &addr6, DeviceType dev_type, VmiType vmi_type,
+                uint8_t vhostuser_mode);
     virtual ~VmInterface();
 
     virtual bool CmpInterface(const DBEntry &rhs) const;
@@ -1040,6 +1088,7 @@ public:
     const std::string &cfg_name() const { return cfg_name_; }
     uint16_t tx_vlan_id() const { return tx_vlan_id_; }
     uint16_t rx_vlan_id() const { return rx_vlan_id_; }
+    uint8_t vhostuser_mode() const { return vhostuser_mode_; }
     const Interface *parent() const { return parent_.get(); }
     bool ecmp() const { return ecmp_;}
     bool ecmp6() const { return ecmp6_;}
@@ -1148,6 +1197,10 @@ public:
         return bridge_domain_list_;
     }
 
+    const VmiReceiveRouteList &receive_route_list() const {
+        return receive_route_list_;
+    }
+
     void set_subnet_bcast_addr(const Ip4Address &addr) {
         subnet_bcast_addr_ = addr;
     }
@@ -1162,14 +1215,13 @@ public:
     void DeleteMetaDataIpInfo(MetaDataIp *mip);
     void UpdateMetaDataIpInfo();
 
-    void InsertHealthCheckInstance(HealthCheckInstance *hc_inst);
-    void DeleteHealthCheckInstance(HealthCheckInstance *hc_inst);
+    void InsertHealthCheckInstance(HealthCheckInstanceBase *hc_inst);
+    void DeleteHealthCheckInstance(HealthCheckInstanceBase *hc_inst);
     const HealthCheckInstanceSet &hc_instance_set() const;
     bool IsHealthCheckEnabled() const;
-    const HealthCheckInstance *GetHealthCheckFromVmiFlow(const IpAddress &sip,
-                                                         const IpAddress &dip,
-                                                         uint8_t proto,
-                                                         uint16_t sport) const;
+    const HealthCheckInstanceBase *GetHealthCheckFromVmiFlow(
+                                   const IpAddress &sip, const IpAddress &dip,
+                                   uint8_t proto, uint16_t sport) const;
 
     const ServiceVlanList &service_vlan_list() const {
         return service_vlan_list_;
@@ -1206,6 +1258,7 @@ public:
     bool NeedDevice() const;
     bool IsActive() const;
     bool InstallBridgeRoutes() const;
+    bool IsBareMetal() const {return (vmi_type_ == BAREMETAL);}
 
     bool NeedMplsLabel() const;
     bool SgExists(const boost::uuids::uuid &id, const SgList &sg_l);
@@ -1223,6 +1276,14 @@ public:
     const FirewallPolicyList& fw_policy_list() const {
         return fw_policy_list_;
     }
+    const boost::uuids::uuid& vmi_cfg_uuid() const {
+        return vmi_cfg_uuid_;
+    }
+
+    const boost::uuids::uuid &si_other_end_vmi() const {
+        return si_other_end_vmi_;
+    }
+    VmInterface * PortTuplePairedInterface() const;
 
     // Static methods
     // Add a vm-interface
@@ -1233,6 +1294,7 @@ public:
                         const boost::uuids::uuid &vm_project_uuid,
                         uint16_t tx_vlan_id, uint16_t rx_vlan_id,
                         const std::string &parent, const Ip6Address &ipv6,
+                        uint8_t vhostuser_mode,
                         Interface::Transport transport);
     // Del a vm-interface
     static void Delete(InterfaceTable *table,
@@ -1391,6 +1453,7 @@ private:
     FatFlowList fat_flow_list_;
     BridgeDomainList bridge_domain_list_;
     VrfAssignRuleList vrf_assign_rule_list_;
+    VmiReceiveRouteList receive_route_list_;
 
     // Peer for interface routes
     std::auto_ptr<LocalVmPortPeer> peer_;
@@ -1419,6 +1482,16 @@ private:
     FirewallPolicyList fw_policy_list_;
     UuidList slo_list_;
     VrfEntryRef forwarding_vrf_;
+    // vhostuser mode
+    uint8_t vhostuser_mode_;
+    /* If current interface is SI VMI, then the below field indicates the VMI
+     * uuid of the other end of SI. If current VMI is left VMI of SI si1, then
+     * below field indicates right VMI of SI si1 and vice versa. This will have
+     * nil_uuid if current VMI is not SI VMI.
+     */
+    boost::uuids::uuid si_other_end_vmi_;
+    //In case Vhost interface, uuid_ is stored here
+    boost::uuids::uuid vmi_cfg_uuid_;
     DISALLOW_COPY_AND_ASSIGN(VmInterface);
 };
 
@@ -1530,6 +1603,7 @@ struct VmInterfaceConfigData : public VmInterfaceData {
                           VmInterface *entry) const;
     virtual bool OnResync(const InterfaceTable *table, VmInterface *vmi,
                           bool *force_update) const;
+    void CopyVhostData(const Agent *agent);
 
     Ip4Address addr_;
     Ip6Address ip6_addr_;
@@ -1571,6 +1645,7 @@ struct VmInterfaceConfigData : public VmInterfaceData {
     VmInterface::InstanceIpList instance_ipv6_list_;
     VmInterface::FatFlowList fat_flow_list_;
     VmInterface::BridgeDomainList bridge_domain_list_;
+    VmInterface::VmiReceiveRouteList receive_route_list_;
     VmInterface::DeviceType device_type_;
     VmInterface::VmiType vmi_type_;
     // Parent physical-interface. Used in VMWare/ ToR logical-interface
@@ -1591,6 +1666,9 @@ struct VmInterfaceConfigData : public VmInterfaceData {
     boost::uuids::uuid qos_config_uuid_;
     bool learning_enabled_;
     UuidList slo_list_;
+    uint8_t vhostuser_mode_;
+    boost::uuids::uuid si_other_end_vmi;
+    boost::uuids::uuid vmi_cfg_uuid_;
 };
 
 // Definition for structures when request queued from Nova
@@ -1607,6 +1685,7 @@ struct VmInterfaceNovaData : public VmInterfaceData {
                         uint16_t rx_vlan_id,
                         VmInterface::DeviceType device_type,
                         VmInterface::VmiType vmi_type,
+                        uint8_t vhostuser_mode,
                         Interface::Transport transport);
     virtual ~VmInterfaceNovaData();
     virtual VmInterface *OnAdd(const InterfaceTable *table,
@@ -1627,6 +1706,7 @@ struct VmInterfaceNovaData : public VmInterfaceData {
     uint16_t rx_vlan_id_;
     VmInterface::DeviceType device_type_;
     VmInterface::VmiType vmi_type_;
+    uint8_t vhostuser_mode_;
 };
 
 struct VmInterfaceGlobalVrouterData : public VmInterfaceData {
