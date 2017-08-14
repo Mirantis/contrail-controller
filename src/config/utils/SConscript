@@ -58,6 +58,7 @@ utils_scripts = [
   'vnc_admin_api.py',
   'rbacutil.py',
   'provision_global_vrouter_config.py',
+  'chownproj.py',
 ]
 
 for utils in utils_scripts:

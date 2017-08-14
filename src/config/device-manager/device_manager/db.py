@@ -625,6 +625,7 @@ class PhysicalInterfaceDM(DBBaseDM):
         self.logical_interfaces = set([li['uuid'] for li in
                                        obj.get('logical_interfaces', [])])
         self.name = obj.get('fq_name')[-1]
+        self.esi = obj.get('ethernet_segment_identifier')
         self.update_multiple_refs('virtual_machine_interface', obj)
         self.update_multiple_refs('physical_interface', obj)
         return obj
@@ -837,6 +838,7 @@ class LogicalRouterDM(DBBaseDM):
     def update(self, obj=None):
         if obj is None:
             obj = self.read_obj(self.uuid)
+        if not self.virtual_network:
             vn_name = DMUtils.get_lr_internal_vn_name(self.uuid)
             vn_obj = VirtualNetworkDM.find_by_name_or_uuid(vn_name)
             if vn_obj:

@@ -117,7 +117,8 @@ void IntfCfgAddNoWait(int intf_id, const string &name, const string ipaddr,
 void IntfCfgAddThrift(PortInfo *input, int id);
 void IntfCfgAdd(int intf_id, const string &name, const string ipaddr,
                 int vm_id, int vn_id, const string &mac, uint16_t vlan,
-                const string ip6addr, int project_id = kProjectUuid);
+                const string ip6addr, uint8_t vhostuser_mode,
+                int project_id = kProjectUuid);
 void IntfCfgAdd(int intf_id, const string &name, const string ipaddr,
                 int vm_id, int vn_id, const string &mac, const string ip6addr);
 void IntfCfgAdd(PortInfo *input, int id);
@@ -465,6 +466,8 @@ void AddHealthCheckService(const char *name, int id, const char *url_path,
 void VxLanNetworkIdentifierMode(bool config);
 void GlobalForwardingMode(std::string mode);
 void AddFlowExportRate(int cfg_flow_export_rate);
+void AddBgpaasPortRange(const int port_start, const int port_end);
+void DelBgpaasPortRange();
 int MplsToVrfId(int label);
 const NextHop* MplsToNextHop(uint32_t label);
 void AddInterfaceRouteTable(const char *name, int id, TestIp4Prefix *addr,

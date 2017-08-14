@@ -555,6 +555,26 @@ class TestCrud(test_case.ApiServerTestCase):
         self._vnc_lib.virtual_machine_interface_update(vmi)
         # end test_bridge_domain_with_multiple_bd_in_vn
 
+    def test_vmi_with_end_to_end_shc(self):
+        project = Project()
+        vn = VirtualNetwork('vn-%s' %(self.id()))
+        self._vnc_lib.virtual_network_create(vn)
+        vmi_obj = VirtualMachineInterface(
+                  str(uuid.uuid4()), parent_obj=project)
+        vmi_obj.uuid = vmi_obj.name
+        vmi_obj.set_virtual_network(vn)
+        vmi_id = self._vnc_lib.virtual_machine_interface_create(vmi_obj)
+
+        shc_props = ServiceHealthCheckType()
+        shc_props.enabled = True
+        shc_props.health_check_type = 'end-to-end'
+        shc_obj = ServiceHealthCheck(str(uuid.uuid4()), parent_obj=project,
+                                service_health_check_properties=shc_props)
+        shc_id = self._vnc_lib.service_health_check_create(shc_obj)
+        with ExpectedException(BadRequest) as e:
+            self._vnc_lib.ref_update('virtual-machine-interface', vmi_id,
+                                 'service-health-check', shc_id, None, 'ADD')
+
     def test_sub_interfaces_with_same_vlan_tags(self):
         vn = VirtualNetwork('vn-%s' %(self.id()))
         self._vnc_lib.virtual_network_create(vn)
@@ -2708,59 +2728,6 @@ class TestLocalAuth(test_case.ApiServerTestCase):
             self.assertThat(resp.status_code, Equals(403))
         finally:
             TestLocalAuth._rbac_role = orig_rbac_role
-
-    def test_multi_tenancy_read_default(self):
-        logger.info("Read Default multi-tenancy")
-        url = '/multi-tenancy'
-        rv = self._vnc_lib._request_server(rest.OP_GET, url)
-        self.assertThat(rv['enabled'], Equals(True))
-
-    def test_multi_tenancy_modify_fail(self):
-        url = '/multi-tenancy'
-        rv = self._vnc_lib._request_server(rest.OP_GET, url)
-        self.assertThat(rv['enabled'], Equals(True))
-
-        logger.info("Disable Multi-Tenancy and read")
-        data = {'enabled': False}
-        try:
-            rv = self._vnc_lib._request_server(rest.OP_PUT, url, json.dumps(data))
-        except cfgm_common.exceptions.PermissionDenied:
-            # permission should be denied as Localauth class does not have admin credential
-            # mt_put should fail without changing it
-            rv = self._vnc_lib._request_server(rest.OP_GET, url)
-            self.assertThat(rv['enabled'], Equals(True))
-        else:
-            self.assertTrue(False, 'Should never come')
-
-    def test_multi_tenancy_modify_pass(self):
-        self.skipTest("Skipping test_multi_tenancy_modify_pass")
-        url = '/multi-tenancy'
-        rv = self._vnc_lib._request_server(rest.OP_GET, url)
-        self.assertThat(rv['enabled'], Equals(True))
-
-        # mock auh_header and signed_token methods to enable http_mt_put to set multi-tenancy
-        def fake_get_header(*args, **kwargs):
-            return 1
-
-        def fake_verify_signed_token(*args, **kwargs):
-            return 1
-
-        server = self._server_info['api_server']
-        with test_common.patch(
-            bottle.LocalRequest, 'get_header', fake_get_header):
-            with test_common.patch(
-                server._auth_svc, 'verify_signed_token', fake_verify_signed_token):
-                logger.info("Disable Multi-Tenancy and read")
-                data = {'enabled': False}
-                rv = self._vnc_lib._request_server(rest.OP_PUT, url, json.dumps(data))
-                rv = self._vnc_lib._request_server(rest.OP_GET, url)
-                self.assertThat(rv['enabled'], Equals(False))
-
-                logger.info("Restore Multi-Tenancy and read")
-                data = {'enabled': True}
-                rv = self._vnc_lib._request_server(rest.OP_PUT, url, json.dumps(data))
-                rv = self._vnc_lib._request_server(rest.OP_GET, url)
-                self.assertThat(rv['enabled'], Equals(True))
 
 # end class TestLocalAuth
 

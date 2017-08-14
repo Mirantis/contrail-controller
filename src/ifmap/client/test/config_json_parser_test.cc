@@ -1445,10 +1445,13 @@ TEST_F(ConfigJsonParserTest, ServerParser15) {
 
     ParseEventsJson("controller/src/ifmap/testdata/server_parser_test15.json");
     FeedEventsJson();
-    TASK_UTIL_EXPECT_EQ(0, vrtable->Size());
+    TASK_UTIL_EXPECT_EQ(1, vrtable->Size());
     TASK_UTIL_EXPECT_EQ(1, vmtable->Size());
     TASK_UTIL_EXPECT_EQ(1, gsctable->Size());
-
+    FeedEventsJson();
+    TASK_UTIL_EXPECT_EQ(1, vmtable->Size());
+    TASK_UTIL_EXPECT_EQ(1, gsctable->Size());
+    TASK_UTIL_EXPECT_EQ(0, vrtable->Size());
     // Object should not exist
     TASK_UTIL_EXPECT_TRUE(NodeLookup("virtual-router", "vr1") == NULL);
     TASK_UTIL_EXPECT_TRUE(NodeLookup("virtual-machine", "vm1") != NULL);
@@ -1551,11 +1554,12 @@ TEST_F(ConfigJsonParserTest, ServerParser16) {
 
     ParseEventsJson("controller/src/ifmap/testdata/server_parser_test16.json");
     FeedEventsJson();
+    task_util::WaitForIdle();
     TASK_UTIL_EXPECT_EQ(1, vmtable->Size());
     TASK_UTIL_EXPECT_EQ(0, gsctable->Size());
 
     // Object should not exist
-    TASK_UTIL_EXPECT_TRUE(NodeLookup("virtual-router", "vr1") == NULL);
+    TASK_UTIL_EXPECT_TRUE(NodeLookup("virtual-router", "gsc:vr1") == NULL);
 
     TASK_UTIL_EXPECT_TRUE(NodeLookup("virtual-machine", "vm1") != NULL);
     TASK_UTIL_EXPECT_TRUE(NodeLookup("virtual-machine", "vm1")->Find(
@@ -1579,12 +1583,14 @@ TEST_F(ConfigJsonParserTest, ServerParser16InParts) {
     ParseEventsJson(
             "controller/src/ifmap/testdata/server_parser_test16_p1.json");
     FeedEventsJson();
+    FeedEventsJson();
+    FeedEventsJson();
     TASK_UTIL_EXPECT_EQ(1, vrtable->Size());
     TASK_UTIL_EXPECT_EQ(1, vmtable->Size());
     TASK_UTIL_EXPECT_EQ(0, gsctable->Size());
 
-    TASK_UTIL_EXPECT_TRUE(NodeLookup("virtual-router", "vr1") != NULL);
-    TASK_UTIL_EXPECT_TRUE(NodeLookup("virtual-router", "vr1")->Find(
+    TASK_UTIL_EXPECT_TRUE(NodeLookup("virtual-router", "gsc:vr1") != NULL);
+    TASK_UTIL_EXPECT_TRUE(NodeLookup("virtual-router", "gsc:vr1")->Find(
                 IFMapOrigin(IFMapOrigin::CASSANDRA)) != NULL);
 
     TASK_UTIL_EXPECT_TRUE(NodeLookup("virtual-machine", "vm1") != NULL);
@@ -1593,30 +1599,32 @@ TEST_F(ConfigJsonParserTest, ServerParser16InParts) {
 
     TASK_UTIL_EXPECT_TRUE(NodeLookup("global-system-config", "gsc") == NULL);
     TASK_UTIL_EXPECT_TRUE(LinkLookup(
-        NodeLookup("virtual-router", "vr1"),
+        NodeLookup("virtual-router", "gsc:vr1"),
         NodeLookup("virtual-machine", "vm1"),
         "virtual-router-virtual-machine") != NULL);
 
     // Using datafile from test13_p2
     FeedEventsJson();
+    FeedEventsJson();
+    task_util::WaitForIdle();
     TASK_UTIL_EXPECT_EQ(1, gsctable->Size());
     TASK_UTIL_EXPECT_EQ(1, vrtable->Size());
     TASK_UTIL_EXPECT_EQ(1, vmtable->Size());
 
     TASK_UTIL_EXPECT_TRUE(NodeLookup("global-system-config", "gsc") != NULL);
     TASK_UTIL_EXPECT_TRUE(NodeLookup("global-system-config", "gsc")->Find(
-                IFMapOrigin(IFMapOrigin::CASSANDRA)) != NULL);
+                 IFMapOrigin(IFMapOrigin::CASSANDRA)) != NULL);
 
-    TASK_UTIL_EXPECT_TRUE(NodeLookup("virtual-router", "vr1") != NULL);
+    TASK_UTIL_EXPECT_TRUE(NodeLookup("virtual-router", "gsc:vr1") != NULL);
     TASK_UTIL_EXPECT_TRUE(NodeLookup("virtual-machine", "vm1") != NULL);
     TASK_UTIL_EXPECT_TRUE(LinkLookup(
-        NodeLookup("virtual-router", "vr1"),
+        NodeLookup("virtual-router", "gsc:vr1"),
         NodeLookup("virtual-machine", "vm1"),
         "virtual-router-virtual-machine") != NULL);
     TASK_UTIL_EXPECT_TRUE(LinkLookup(
-        NodeLookup("virtual-router", "vr1"),
         NodeLookup("global-system-config", "gsc"),
-        "global-system-config-virtual-router") != NULL);
+        NodeLookup("virtual-router", "gsc:vr1"),
+                   "global-system-config-virtual-router") != NULL);
 
     // Need new datafile for step 3
     FeedEventsJson();
@@ -1624,7 +1632,7 @@ TEST_F(ConfigJsonParserTest, ServerParser16InParts) {
     TASK_UTIL_EXPECT_EQ(1, vmtable->Size());
     TASK_UTIL_EXPECT_EQ(0, gsctable->Size());
 
-    TASK_UTIL_EXPECT_TRUE(NodeLookup("virtual-router", "vr1") == NULL);
+    TASK_UTIL_EXPECT_TRUE(NodeLookup("virtual-router", "gsc:vr1") == NULL);
     TASK_UTIL_EXPECT_TRUE(NodeLookup("virtual-machine", "vm1") != NULL);
     TASK_UTIL_EXPECT_TRUE(NodeLookup("virtual-machine", "vm1")->Find(
                 IFMapOrigin(IFMapOrigin::CASSANDRA)) != NULL);

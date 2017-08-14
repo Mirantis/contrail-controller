@@ -87,6 +87,7 @@ private:
     uint32_t interface_id_;
     string interface_name_;     // Key
     uint32_t ip_;
+    Ip6Address primary_ip6_;
     bool hc_active_;
     bool ipv4_active_;
     bool layer3_forwarding_;
@@ -126,6 +127,7 @@ private:
     MacAddress pbb_mac_;
     bool etree_leaf_;
     bool pbb_interface_;
+    uint8_t vhostuser_mode_;
     DISALLOW_COPY_AND_ASSIGN(InterfaceKSyncEntry);
 };
 
