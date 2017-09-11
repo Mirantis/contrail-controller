@@ -352,7 +352,7 @@ def check_svc(svc, initd_svc=False, check_return_code=False,
         if options:
             status = get_svc_uve_info(svc, status, options.debug,
                 options.detail, options.timeout, options.keyfile,
-                options.certfile, options.cafile)
+                options.certfile, options.cacert)
         print '{0:<30}{1:<20}{2}'.format(psvc, status, bootstatus)
     else:
         if svc in SHOW_IF_DISABLED and SHOW_IF_DISABLED[svc] == False:
@@ -596,6 +596,15 @@ def contrail_service_status(nodetype, options):
         print "== Contrail Config =="
         for svc_name in CONTRAIL_SERVICES[nodetype][init_sys_used]:
             check_status(svc_name, options)
+        db = package_installed('contrail-openstack-database')
+        config_db = package_installed('contrail-database-common')
+        if not db and config_db:
+            print "== Contrail Config Database=="
+            initd_svc = init_sys_used != 'systemd'
+            check_return_code = True
+            check_svc('contrail-database', initd_svc=initd_svc,
+                check_return_code=check_return_code)
+            print
     elif nodetype == 'control':
         print "== Contrail Control =="
         for svc_name in CONTRAIL_SERVICES[nodetype][init_sys_used]:

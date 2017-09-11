@@ -24,6 +24,9 @@ from kube_manager.common.kube_config_db import (NamespaceKM, PodKM)
 from kube_manager.vnc.vnc_kubernetes_config import (
     VncKubernetesConfig as vnc_kube_config)
 
+from cStringIO import StringIO
+from cfgm_common.utils import cgitb_hook
+
 class VncPod(VncCommon):
 
     def __init__(self, service_mgr, network_policy_mgr):
@@ -116,6 +119,7 @@ class VncPod(VncCommon):
         vn_fq_name = pod.get_vn_fq_name()
         ns = self._get_namespace(pod_namespace)
 
+        # FIXME: Check if ns is not None
         # Check of virtual network configured on the namespace.
         if not vn_fq_name:
             vn_fq_name = ns.get_annotated_network_fq_name()
@@ -337,6 +341,8 @@ class VncPod(VncCommon):
         vm = VirtualMachineKM.get(pod_id)
         if vm:
             vm.pod_namespace = pod_namespace
+            if not vm.virtual_router:
+                self._link_vm_to_node(vm, pod_node)
             self._set_label_to_pod_cache(labels, vm)
             return vm
         else:
@@ -386,6 +392,7 @@ class VncPod(VncCommon):
         vm = VirtualMachineKM.locate(pod_id)
         if vm:
             vm.pod_namespace = pod_namespace
+            vm.pod_node = pod_node
             self._set_label_to_pod_cache(labels, vm)
             return vm
 
@@ -472,6 +479,12 @@ class VncPod(VncCommon):
             if not vm or vm.owner != 'k8s':
                 continue
             self._create_pod_event('delete', uuid, vm)
+        for uuid in pod_uuid_set:
+            vm = VirtualMachineKM.get(uuid)
+            if not vm or vm.owner != 'k8s':
+                continue
+            if not vm.virtual_router and vm.pod_node:
+                self._link_vm_to_node(vm, vm.pod_node)
         return
 
     def pod_timer(self):
@@ -527,3 +540,6 @@ class VncPod(VncCommon):
                                                            pod_id, labels)
         elif event['type'] == 'DELETED':
             self.vnc_pod_delete(pod_id)
+        else:
+            self._logger.warning(
+                'Unknown event type: "{}" Ignoring'.format(event['type']))

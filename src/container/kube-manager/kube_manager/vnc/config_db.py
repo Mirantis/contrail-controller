@@ -445,12 +445,15 @@ class VirtualMachineKM(DBBaseKM):
         self.virtual_machine_interfaces = set()
         self.pod_labels = None
         self.pod_namespace = None
+        self.pod_node = None
         super(VirtualMachineKM, self).__init__(uuid, obj_dict)
         obj_dict = self.update(obj_dict)
 
     def update(self, obj=None):
         if obj is None:
             obj = self.read_obj(self.uuid)
+            if not obj:
+                return
         self.name = obj['fq_name'][-1]
         self.fq_name = obj['fq_name']
         self.annotations = obj.get('annotations', None)
