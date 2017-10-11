@@ -2,6 +2,8 @@
 # Copyright (c) 2013 Juniper Networks, Inc. All rights reserved.
 #
 
+import platform
+
 SConscript(dirs=['lib', 'src'])
 
 env = DefaultEnvironment()
@@ -49,3 +51,7 @@ env.Alias('controller/flaky-test', [
 
 env.Alias('test', [ 'controller/test' ])
 env.Alias('flaky-test', [ 'controller/flaky-test' ])
+
+env.Append(CCFLAGS = ['-DTBB_USE_GCC_BUILTINS=1'])
+if platform.machine() == 'armhf':
+    env.Append(CCFLAGS = ['-D__TBB_64BIT_ATOMICS=0'])
