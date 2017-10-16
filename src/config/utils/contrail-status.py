@@ -599,7 +599,7 @@ def contrail_service_status(nodetype, options):
         for svc_name in CONTRAIL_SERVICES[nodetype][init_sys_used]:
             check_status(svc_name, options)
         db = package_installed('contrail-openstack-database')
-        config_db = package_installed('contrail-database-common')
+        config_db = package_installed('contrail-database')
         if not db and config_db:
             print "== Contrail Config Database=="
             initd_svc = init_sys_used != 'systemd'
