@@ -24,7 +24,7 @@ class ConfigEventManager(EventManager):
             supervisor_serverurl = "unix:///var/run/supervisord_config.sock"
 
         self.db = package_installed('contrail-openstack-database')
-        self.config_db = package_installed('contrail-database-common')
+        self.config_db = package_installed('contrail-database')
         if not self.db and self.config_db:
             unit_names.append('contrail-database.service')
 
