@@ -22,7 +22,7 @@ class DatabaseEventManager(EventManager):
         else:
             supervisor_serverurl = "unix:///var/run/supervisord_database.sock"
         type_info = EventManagerTypeInfo(
-            package_name = 'contrail-database',
+            package_name = 'contrail-database-common',
             object_table = "ObjectDatabaseInfo",
             module_type = Module.DATABASE_NODE_MGR,
             supervisor_serverurl = supervisor_serverurl,
