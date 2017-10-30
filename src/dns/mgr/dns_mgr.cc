@@ -129,7 +129,7 @@ void DnsManager::ProcessAgentUpdate(BindUtil::Operation event,
                                     const std::string &vdns_name,
                                     const DnsItem &item) {
     tbb::mutex::scoped_lock lock(mutex_);
-    VirtualDnsRecordConfig *config = VirtualDnsRecordConfig::Find(name);
+    VirtualDnsRecordConfig *config = VirtualDnsRecordConfig::Find(name + item.from_name);
     switch (event) {
         case BindUtil::ADD_UPDATE:
             if (!config) {
