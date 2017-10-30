@@ -4463,9 +4463,6 @@ class DBInterface(object):
             if ('fixed_ips' in filters and
                 not self._port_fixed_ips_is_present(filters['fixed_ips'],
                                                     neutron_port['fixed_ips'])):
-                continue:
-            if not self._filters_is_present(filters, 'mac_address',
-                                            neutron_port['mac_address']):
                 continue
             if not self._filters_is_present(filters, 'mac_address',
                                             neutron_port['mac_address']):
