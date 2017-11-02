@@ -727,6 +727,31 @@ class VirtualMachineInterfaceServer(Resource, VirtualMachineInterface):
     # end _check_vrouter_link
 
     @classmethod
+    def _check_port_security_and_address_pairs(cls, obj_dict, db_dict={}):
+        if ('port_security_enabled' not in obj_dict and
+            'virtual_machine_interface_allowed_address_pairs' not in obj_dict):
+            return True, ""
+
+        if 'port_security_enabled' in obj_dict:
+            port_security = obj_dict.get('port_security_enabled', True)
+        else:
+            port_security = db_dict.get('port_security_enabled', True)
+
+        if 'virtual_machine_interface_allowed_address_pairs' in obj_dict:
+            address_pairs = obj_dict.get(
+                            'virtual_machine_interface_allowed_address_pairs')
+        else:
+            address_pairs = db_dict.get(
+                            'virtual_machine_interface_allowed_address_pairs')
+
+        if not port_security and address_pairs is not None:
+            msg = "Allowed address pairs are not allowed when port "\
+                  "security is disabled"
+            return (False, (400, msg))
+
+        return True, ""
+
+    @classmethod
     def pre_dbe_create(cls, tenant_name, obj_dict, db_conn):
         vn_dict = obj_dict['virtual_network_refs'][0]
         vn_uuid = vn_dict.get('uuid')
@@ -805,6 +830,11 @@ class VirtualMachineInterfaceServer(Resource, VirtualMachineInterface):
                 vnic_type = {'key': 'vnic_type',
                              'value': cls.portbindings['VNIC_TYPE_NORMAL']}
                 kvps.append(vnic_type)
+
+        (ok, result) = cls._check_port_security_and_address_pairs(obj_dict)
+
+        if not ok:
+            return ok, result
 
         return True, ""
     # end pre_dbe_create
@@ -897,6 +927,11 @@ class VirtualMachineInterfaceServer(Resource, VirtualMachineInterface):
             if new_vlan != old_vlan:
                 return (False, (400, "Cannot change Vlan tag"))
 
+        (ok,result) = cls._check_port_security_and_address_pairs(obj_dict,
+                                                                 read_result)
+        if not ok:
+            return ok, result
+
         return True, ""
     # end pre_dbe_update
 
@@ -936,6 +971,7 @@ class ServiceApplianceSetServer(Resource, ServiceApplianceSet):
 # end class ServiceApplianceSetServer
 
 class VirtualNetworkServer(Resource, VirtualNetwork):
+    rpf_default = None
 
     @classmethod
     def _check_route_targets(cls, obj_dict, db_conn):
@@ -1054,6 +1090,17 @@ class VirtualNetworkServer(Resource, VirtualNetwork):
 
         (ok, result) = cls.addr_mgmt.net_check_subnet_quota(obj_dict,
                                                             obj_dict, db_conn)
+
+        # Changing RPF default if configured
+        if cls.rpf_default is not None:
+            vnp = obj_dict.get('virtual_network_properties')
+            if vnp is None:
+                vnp = {'rpf': cls.rpf_default}
+            else:
+                rpf = vnp.get('rpf')
+                if rpf is None:
+                    vnp['rpf'] = cls.rpf_default
+            obj_dict['virtual_network_properties'] = vnp
 
         if not ok:
             return (ok, (vnc_quota.QUOTA_OVER_ERROR_CODE, result))
