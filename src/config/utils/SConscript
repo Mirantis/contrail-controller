@@ -49,10 +49,13 @@ utils_scripts = [
   'provision_user_defined_log_statistics.py',
   'provision_alarm.py',
   'contrail_alarm.py',
+  'service_appliance.py',
+  'service_appliance_set.py',
   'contrail-diff-docs.py',
   'provision_issu.py',
   'issu_process.sh',
   'qosmap.py',
+  'rbacutil.py',
 ]
 
 for utils in utils_scripts:
