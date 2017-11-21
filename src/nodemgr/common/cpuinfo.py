@@ -31,9 +31,10 @@ class MemCpuUsageData(object):
     #end get_num_socket
 
     def get_num_cpu(self):
-        cmd = 'lscpu | grep "^CPU(s):" | awk \'{print $2}\''
-        proc = Popen(cmd, shell=True, stdout=PIPE)
-        return int(proc.communicate()[0])
+        if hasattr(psutil, 'NUM_CPUS'):
+            return psutil.NUM_CPUS
+        else:
+            return psutil.cpu_count()
     #end get_num_cpu
 
     def get_num_core_per_socket(self):
@@ -83,7 +84,7 @@ class MemCpuUsageData(object):
 
     def get_process_mem_cpu_info(self):
         process_mem_cpu           = ProcessCpuInfo()
-        process_mem_cpu.cpu_share = self._process.get_cpu_percent(interval=0.1)/psutil.NUM_CPUS
+        process_mem_cpu.cpu_share = self._process.get_cpu_percent(interval=0.1)/self.get_num_cpu()
         process_mem_cpu.mem_virt  = self._process.get_memory_info().vms/1024
         process_mem_cpu.mem_res   = self._process.get_memory_info().rss/1024
         return process_mem_cpu
