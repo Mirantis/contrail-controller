@@ -3,6 +3,8 @@ Description="Contrail SVC Monitor"
 After=network.target
 
 [Service]
+StartLimitIntervalSec=0
+RestartSec=3s
 Type=simple
 ExecStart=/usr/bin/contrail-svc-monitor --conf_file /etc/contrail/contrail-svc-monitor.conf --conf_file /etc/contrail/contrail-keystone-auth.conf
 PIDFile=/var/run/contrail/contrail-svc-monitor.pid

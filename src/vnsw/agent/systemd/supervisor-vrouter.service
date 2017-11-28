@@ -3,6 +3,8 @@ Description= Supervisor for contrail vrouter service
 After=syslog.target network.target
 
 [Service]
+StartLimitIntervalSec=0
+RestartSec=3s
 Restart=always
 ExecStart=/usr/bin/supervisord -n -c /etc/contrail/supervisord_vrouter.conf
 LimitCORE=infinity

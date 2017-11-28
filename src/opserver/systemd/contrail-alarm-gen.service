@@ -3,6 +3,8 @@ Description="Contrail Alarm-gen"
 After=network.target
 
 [Service]
+StartLimitIntervalSec=0
+RestartSec=3s
 Type=simple
 ExecStart=/usr/bin/contrail-alarm-gen
 PIDFile=/var/run/contrail/contrail-alarm-gen.pid
