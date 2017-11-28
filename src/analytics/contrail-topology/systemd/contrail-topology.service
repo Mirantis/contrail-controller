@@ -3,6 +3,8 @@ Description="Contrail Topology"
 After=network.target
 
 [Service]
+StartLimitIntervalSec=0
+RestartSec=3s
 Type=simple
 ExecStart=/usr/bin/contrail-topology
 PIDFile=/var/run/contrail/contrail-topology.pid

@@ -3,6 +3,8 @@ Description="Contrail Analytics API"
 After=network.target
 
 [Service]
+StartLimitIntervalSec=0
+RestartSec=3s
 Type=simple
 ExecStart=/usr/bin/contrail-analytics-api
 PIDFile=/var/run/contrail/contrail-analytics-api.pid

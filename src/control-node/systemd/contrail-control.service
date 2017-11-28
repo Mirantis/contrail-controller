@@ -3,6 +3,8 @@ Description="Contrail Control"
 After=network.target
 
 [Service]
+StartLimitIntervalSec=0
+RestartSec=3s
 Type=simple
 ExecStart=/usr/bin/authbind /usr/bin/contrail-control
 PIDFile=/var/run/contrail/contrail-control.pid

@@ -3,8 +3,13 @@ Description=Contrail vrouter agent service
 After=network.target
 
 [Service]
+StartLimitIntervalSec=0
+RestartSec=3s
 Type=simple
 ExecStart=/usr/bin/contrail-vrouter-agent
+ExecStartPre=sh -c /usr/lib/contrail/exec-vrouter-pre-start.sh
+ExecStartPost=sh -c /usr/lib/contrail/exec-vrouter-post-start.sh
+ExecStopPost=sh -c /usr/lib/contrail/exec-vrouter-post-stop.sh
 PIDFile=/var/run/contrail/contrail-vrouter-agent.pid
 TimeoutStopSec=0
 Restart=always

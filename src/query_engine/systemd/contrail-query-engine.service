@@ -3,6 +3,8 @@ Description="Contrail Query Engine"
 After=network.target
 
 [Service]
+StartLimitIntervalSec=0
+RestartSec=3s
 Type=simple
 ExecStart=/usr/bin/contrail-query-engine
 PIDFile=/var/run/contrail/contrail-query-engine.pid

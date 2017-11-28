@@ -4,6 +4,8 @@ Documentation="Contrail kube manager"
 After=network.target
 
 [Service]
+StartLimitIntervalSec=0
+RestartSec=3s
 Type=simple
 NotifyAccess=all
 ExecStart=/usr/bin/contrail-kube-manager -c /etc/contrail/contrail-kubernetes.conf
