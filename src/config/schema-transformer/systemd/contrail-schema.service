@@ -3,6 +3,8 @@ Description="Contrail Schema"
 After=network.target
 
 [Service]
+StartLimitIntervalSec=0
+RestartSec=3s
 Type=simple
 ExecStart=/usr/bin/contrail-schema --conf_file /etc/contrail/contrail-schema.conf --conf_file /etc/contrail/contrail-keystone-auth.conf
 PIDFile=/var/run/contrail/contrail-schema.pid

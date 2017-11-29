@@ -3,6 +3,8 @@ Description=Contrail vrouter nodemanager
 After=network.target
 
 [Service]
+StartLimitIntervalSec=0
+RestartSec=3s
 Type=simple
 ExecStart=/usr/bin/contrail-nodemgr --nodetype=contrail-vrouter
 PIDFile=/var/run/contrail/contrail-vrouter-nodemgr.pid

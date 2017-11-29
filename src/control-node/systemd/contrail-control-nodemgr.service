@@ -3,6 +3,8 @@ Description="Contrail control nodemanager"
 After=network.target
 
 [Service]
+StartLimitIntervalSec=0
+RestartSec=3s
 Type=simple
 ExecStart=/usr/bin/contrail-nodemgr --nodetype=contrail-control
 PIDFile=/var/run/contrail/contrail-control-nodemgr.pid
