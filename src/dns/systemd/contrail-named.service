@@ -1,9 +1,9 @@
 [Unit]
+StartLimitIntervalSec=0
 Description="Contrail Named Service"
 After=network.target
 
 [Service]
-StartLimitIntervalSec=0
 RestartSec=3s
 Type=simple
 ExecStart=/usr/bin/authbind /usr/bin/contrail-named -f -c /etc/contrail/dns/contrail-named.conf

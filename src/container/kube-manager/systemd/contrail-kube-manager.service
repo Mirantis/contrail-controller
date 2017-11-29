@@ -1,10 +1,10 @@
 [Unit]
+StartLimitIntervalSec=0
 Description="Contrail kube-manager"
 Documentation="Contrail kube manager"
 After=network.target
 
 [Service]
-StartLimitIntervalSec=0
 RestartSec=3s
 Type=simple
 NotifyAccess=all

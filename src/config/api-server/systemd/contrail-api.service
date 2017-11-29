@@ -1,9 +1,9 @@
 [Unit]
+StartLimitIntervalSec=0
 Description="Contrail API"
 After=network.target
 
 [Service]
-StartLimitIntervalSec=0
 RestartSec=3s
 Type=simple
 ExecStart=/usr/bin/contrail-api --conf_file /etc/contrail/contrail-api.conf --conf_file /etc/contrail/contrail-keystone-auth.conf --conf_file /etc/contrail/contrail-database.conf --listen_port 9100

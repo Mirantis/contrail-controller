@@ -1,9 +1,9 @@
 [Unit]
+StartLimitIntervalSec=0
 Description=Contrail config nodemanager
 After=network.target
 
 [Service]
-StartLimitIntervalSec=0
 RestartSec=3s
 Type=simple
 ExecStart=/usr/bin/contrail-nodemgr --nodetype=contrail-config
