@@ -648,6 +648,7 @@ class VirtualMachineInterfaceServer(Resource, VirtualMachineInterface):
     portbindings['VIF_TYPE_HW_VEB'] = 'hw_veb'
     portbindings['VNIC_TYPE_NORMAL'] = 'normal'
     portbindings['VNIC_TYPE_DIRECT'] = 'direct'
+    portbindings['VNIC_TYPE_DIRECT'] = 'baremetal'
     portbindings['PORT_FILTER'] = True
 
     @staticmethod
@@ -715,17 +716,35 @@ class VirtualMachineInterfaceServer(Resource, VirtualMachineInterface):
         return True, ""
 
     @classmethod
-    def _is_port_bound(cls, obj_dict):
+    def _is_port_bound(cls, obj_dict, new_kvp_dict):
         """Check whatever port is bound.
 
-        We assume port is bound when it is linked to either VM or Vrouter.
+        For any NON 'baremetal port' we assume port is bound when it is linked
+        to either VM or Vrouter.
+        For any 'baremetal' port we assume it is bound when it has set:
+            * binding:local_link_information
+            * binding:host_id
 
-        :param obj_dict: Port dict to check
+        :param obj_dict: Current port dict to check
+        :param new_kvp_dict: KVP dict of port update.
         :returns: True if port is bound, False otherwise.
         """
+        bindings = obj_dict['virtual_machine_interface_bindings']
+        kvps = bindings['key_value_pair']
+        kvp_dict = cls._kvp_to_dict(kvps)
+        old_vnic_type = kvp_dict.get('vnic_type')
+        new_vnic_type = new_kvp_dict.get('vnic_type')
 
-        return (obj_dict.get('logical_router_back_refs') or
-                obj_dict.get('virtual_machine_refs'))
+        if new_vnic_type == cls.portbindings['VNIC_TYPE_BAREMETAL']:
+            return False
+
+        if old_vnic_type == cls.portbindings['VNIC_TYPE_BAREMETAL']:
+            if (kvp_dict.get('profile', {}).get('local_link_information') and
+                kvp_dict.get('host_id')):
+                return True
+        else:
+            return (obj_dict.get('logical_router_back_refs') or
+                    obj_dict.get('virtual_machine_refs'))
 
     @classmethod
     def pre_dbe_create(cls, tenant_name, obj_dict, db_conn):
@@ -935,6 +954,7 @@ class ServiceApplianceSetServer(Resource, ServiceApplianceSet):
 # end class ServiceApplianceSetServer
 
 class VirtualNetworkServer(Resource, VirtualNetwork):
+    rpf_default = None
 
     @classmethod
     def _check_route_targets(cls, obj_dict, db_conn):
@@ -1188,6 +1208,18 @@ class VirtualNetworkServer(Resource, VirtualNetwork):
                 return True, ""
             get_context().push_undo(undo_vn_id)
             obj_dict['virtual_network_network_id'] = vn_id + 1
+
+        # Changing RPF default if configured
+        if cls.rpf_default is not None:
+            vnp = obj_dict.get('virtual_network_properties')
+            if vnp is None:
+                vnp = {'rpf': cls.rpf_default}
+            else:
+                rpf = vnp.get('rpf')
+                if rpf is None:
+                    vnp['rpf'] = cls.rpf_default
+            obj_dict['virtual_network_properties'] = vnp
+
 
         vn_uuid = obj_dict.get('uuid')
         (ok, return_code, result) = cls._check_ipam_network_subnets(obj_dict,
