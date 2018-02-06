@@ -16,7 +16,10 @@ from netaddr import IPNetwork, IPSet, IPAddress
 import gevent
 import bottle
 
-from neutron.common import constants
+try:
+    from neutron_lib import constants
+except ImportError:
+    from neutron.common import constants
 
 from cfgm_common import exceptions as vnc_exc
 from vnc_api.vnc_api import *
@@ -1257,6 +1260,7 @@ class DBInterface(object):
 
         extra_dict['contrail:fq_name'] = net_obj.get_fq_name()
         net_q_dict['tenant_id'] = net_obj.parent_uuid.replace('-', '')
+        net_q_dict['project_id'] = net_obj.parent_uuid.replace('-', '')
         net_q_dict['admin_state_up'] = id_perms.enable
         if net_obj.is_shared:
             net_q_dict['shared'] = True
@@ -1910,9 +1914,9 @@ class DBInterface(object):
                 if port_sg_refs:
                     if 'security_groups' in port_q and not port_q['security_groups']:
                         # reset all SG on the port
-                        port_obj.set_security_groups_list([])
+                        port_obj.set_security_group_list([])
                     elif len(port_sg_refs) == 1 and port_sg_refs[0]['to'] == SG_NO_RULE_FQ_NAME:
-                        port_obj.set_security_groups_list([])
+                        port_obj.set_security_group_list([])
                     else:
                         self._raise_contrail_exception('PortSecurityPortHasSecurityGroup', port_id=port_obj.uuid)
 
@@ -3333,6 +3337,10 @@ class DBInterface(object):
                     msg='Router port must have exactly one fixed IP')
             subnet_id = fixed_ips[0]['subnet_id']
             subnet = self.subnet_read(subnet_id)
+            if not IPAddress(subnet['gateway_ip']):
+               self._raise_contrail_exception(
+                   'BadRequest', resource='router',
+                   msg='Subnet for router interface must have a gateway IP')
             self._check_for_dup_router_subnet(router_id,
                                               port['network_id'],
                                               subnet['id'],
@@ -3340,7 +3348,7 @@ class DBInterface(object):
 
         elif subnet_id:
             subnet = self.subnet_read(subnet_id)
-            if not subnet['gateway_ip']:
+            if not subnet['gateway_ip'] or not IPAddress(subnet['gateway_ip']):
                 self._raise_contrail_exception(
                     'BadRequest', resource='router',
                     msg='Subnet for router interface must have a gateway IP')
@@ -3692,7 +3700,18 @@ class DBInterface(object):
                     ip_obj_v6_create = True
 
         # create the object
-        port_id = self._resource_create('virtual_machine_interface', port_obj)
+        try:
+            port_id = self._resource_create('virtual_machine_interface', port_obj)
+        except BadRequest as e:
+            msg = "Allowed address pairs are not allowed when port "\
+                  "security is disabled"
+            if msg == str(e):
+                self._raise_contrail_exception(
+                   'AddressPairAndPortSecurityRequired')
+            else:
+                self._raise_contrail_exception(
+                   'BadRequest', resource='port', msg=str(e))
+
         self._vnc_lib.chown(port_id, tenant_id)
         # add support, nova boot --nic subnet-id=subnet_uuid
         subnet_id = port_q.get('subnet_id')
@@ -3754,7 +3773,18 @@ class DBInterface(object):
         port_obj = self._port_neutron_to_vnc(port_q, None, UPDATE)
         net_id = port_obj.get_virtual_network_refs()[0]['uuid']
         net_obj = self._network_read(net_id)
-        self._virtual_machine_interface_update(port_obj)
+        try:
+            self._virtual_machine_interface_update(port_obj)
+        except BadRequest as e:
+            msg = "Allowed address pairs are not allowed when port "\
+                  "security is disabled"
+            if msg == str(e):
+                self._raise_contrail_exception(
+                   'AddressPairAndPortSecurityRequired')
+            else:
+                self._raise_contrail_exception(
+                   'BadRequest', resource='port', msg=str(e))
+
         port_obj = self._virtual_machine_interface_read(port_id=port_id)
         ret_port_q = self._port_vnc_to_neutron(port_obj)
 
