@@ -1409,7 +1409,10 @@ class DBInterface(object):
             dhcp_options=[]
             dns_servers=" ".join(subnet_q['dns_nameservers'])
             if dns_servers:
-                dhcp_options.append(DhcpOptionType(dhcp_option_name='6',
+                dhcp_option_code='6'
+                if cidr.version == 6:
+                    dhcp_option_code='v6-name-servers'
+                dhcp_options.append(DhcpOptionType(dhcp_option_name=dhcp_option_code,
                                                    dhcp_option_value=dns_servers))
             if dhcp_options:
                 dhcp_option_list = DhcpOptionsListType(dhcp_options)
@@ -1498,7 +1501,8 @@ class DBInterface(object):
         dhcp_option_list = subnet_vnc.get_dhcp_option_list()
         if dhcp_option_list:
             for dhcp_option in dhcp_option_list.dhcp_option:
-                if dhcp_option.get_dhcp_option_name() == '6':
+                if dhcp_option.get_dhcp_option_name() in\
+                    ['6', 'v6-name-servers']:
                     dns_servers = dhcp_option.get_dhcp_option_value().split()
                     for dns_server in dns_servers:
                         nameserver_entry = {'address': dns_server,
@@ -2924,10 +2928,16 @@ class DBInterface(object):
                     if 'dns_nameservers' in subnet_q:
                         if subnet_q['dns_nameservers'] != None:
                             dhcp_options=[]
-                            dns_servers=" ".join(subnet_q['dns_nameservers'])
-                            if dns_servers:
+                            dns_servers_v4=" ".join([x for x in subnet_q['dns_nameservers']
+                                                    if IPAddress(x).version == 4])
+                            dns_servers_v6=" ".join([x for x in subnet_q['dns_nameservers']
+                                                    if IPAddress(x).version == 6])
+                            if dns_servers_v4:
                                 dhcp_options.append(DhcpOptionType(dhcp_option_name='6',
-                                                                   dhcp_option_value=dns_servers))
+                                                                   dhcp_option_value=dns_servers_v4))
+                            if dns_servers_v6:
+                                dhcp_options.append(DhcpOptionType(dhcp_option_name='v6-name-servers',
+                                                                   dhcp_option_value=dns_servers_v6))
                             if dhcp_options:
                                 subnet_vnc.set_dhcp_option_list(DhcpOptionsListType(dhcp_options))
                             else:
