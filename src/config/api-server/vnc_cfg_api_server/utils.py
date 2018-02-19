@@ -13,6 +13,7 @@ import cfgm_common
 from pysandesh.sandesh_base import Sandesh, SandeshSystem, SandeshConfig
 from pysandesh.gen_py.sandesh.ttypes import SandeshLevel
 from vnc_cfg_types import VirtualNetworkServer
+from vnc_api.utils import AAA_MODE_VALID_VALUES
 
 _WEB_HOST = '0.0.0.0'
 _WEB_PORT = 8082
@@ -267,7 +268,7 @@ def parse_args(args_str):
         action="store_true",
         help="Validate resource permissions (implies token validation)")
     parser.add_argument(
-        "--aaa_mode", choices=cfgm_common.AAA_MODE_VALID_VALUES,
+        "--aaa_mode", choices=AAA_MODE_VALID_VALUES,
         help="AAA mode")
     parser.add_argument(
         "--worker_id",
