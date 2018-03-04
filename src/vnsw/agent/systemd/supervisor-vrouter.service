@@ -1,0 +1,19 @@
+[Unit]
+Description= Supervisor for contrail vrouter service
+After=syslog.target network.target
+
+[Service]
+Restart=always
+ExecStartPre=/usr/lib/contrail/exec-vrouter-pre-start.sh
+ExecStart=/usr/bin/supervisord -n -c /etc/contrail/supervisord_vrouter.conf
+ExecStartPost=/usr/lib/contrail/exec-vrouter-post-start.sh
+ExecStop=/usr/bin/supervisorctl -s unix:///var/run/supervisord_vrouter.sock stop all
+ExecStopPost=/usr/lib/contrail/exec-vrouter-post-stop.sh
+LimitCORE=infinity
+LimitNOFILE=4096
+LimitSTACK=infinity
+LimitDATA=infinity
+LimitAS=infinity
+
+[Install]
+WantedBy=multi-user.target
