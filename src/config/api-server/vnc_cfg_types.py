@@ -986,6 +986,7 @@ class ServiceApplianceSetServer(Resource, ServiceApplianceSet):
 # end class ServiceApplianceSetServer
 
 class VirtualNetworkServer(Resource, VirtualNetwork):
+    rpf_default = None
 
     @classmethod
     def _check_route_targets(cls, obj_dict, db_conn):
@@ -1104,6 +1105,17 @@ class VirtualNetworkServer(Resource, VirtualNetwork):
 
         (ok, result) = cls.addr_mgmt.net_check_subnet_quota(obj_dict,
                                                             obj_dict, db_conn)
+
+        # Changing RPF default if configured
+        if cls.rpf_default is not None:
+            vnp = obj_dict.get('virtual_network_properties')
+            if vnp is None:
+                vnp = {'rpf': cls.rpf_default}
+            else:
+                rpf = vnp.get('rpf')
+                if rpf is None:
+                    vnp['rpf'] = cls.rpf_default
+            obj_dict['virtual_network_properties'] = vnp
 
         if not ok:
             return (ok, (vnc_quota.QUOTA_OVER_ERROR_CODE, result))
