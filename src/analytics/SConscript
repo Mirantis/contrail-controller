@@ -55,6 +55,9 @@ AnalyticsEnv.Prepend(LIBS=['cpuinfo',
         'sandeshvns',
         'pugixml',
         'hiredis',
+        'ssl',
+        'crypto',
+        'sasl2',
         'protobuf',
         'zookeeper_client',
         'zookeeper_mt',
@@ -153,7 +156,7 @@ vizd_sources = ['viz_collector.cc', 'ruleeng.cc', 'collector.cc',
                 'vizd_table_desc.cc', 'viz_message.cc','generator.cc',
                 'redis_connection.cc', 'redis_processor_vizd.cc',
                 'options.cc', 'stat_walker.cc', 'protobuf_collector.cc',
-                'protobuf_server.cc',
+                'protobuf_server.cc', 'sandesh_request.cc',
                 'sflow.cc',
                 'sflow_generator.cc', 'sflow_collector.cc',
                 'usrdef_counters.cc',
@@ -255,6 +258,12 @@ AnalyticsEnv.Alias('install', AnalyticsEnv.Install(
 AnalyticsEnv.Alias('install', AnalyticsEnv.InstallAs(
             AnalyticsEnv['INSTALL_INITD'] + '/contrail-collector',
             'contrail-collector.initd.supervisord'))
+AnalyticsEnv.Alias('install', AnalyticsEnv.InstallAs(
+            AnalyticsEnv['INSTALL_SYSTEMD'] + '/contrail-collector.service',
+            'systemd/contrail-collector.service'))
+AnalyticsEnv.Alias('install', AnalyticsEnv.InstallAs(
+            AnalyticsEnv['INSTALL_SYSTEMD'] + '/contrail-analytics-nodemgr.service',
+            'systemd/contrail-analytics-nodemgr.service'))
 AnalyticsEnv.Alias('install', AnalyticsEnv.Install(
             AnalyticsEnv['INSTALL_CONF'], 'supervisord_analytics.conf'))
 AnalyticsEnv.Alias('install', AnalyticsEnv.Install(
