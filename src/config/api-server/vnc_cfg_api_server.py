@@ -1513,7 +1513,8 @@ class VncApiServer(object):
             self._db_init_entries()
 
         if (self._args.ifmap_listen_ip is not None and
-                self._args.ifmap_listen_port is not None):
+                self._args.ifmap_listen_port is not None and
+                self.get_worker_id() == 0):
             # As DB are synced, we can serve the custom IF-MAP server
             self._vnc_ifmap_server = VncIfmapServer(self, self._args)
             gevent.spawn(self._vnc_ifmap_server.run_server)
