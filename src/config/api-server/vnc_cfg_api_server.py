@@ -102,6 +102,8 @@ import discoveryclient.client as client
 # from gen_py.vnc_api.ttypes import *
 import netifaces
 from pysandesh.connection_info import ConnectionState
+from pysandesh.gen_py.process_info.ttypes import ConnectionStatus
+from pysandesh.gen_py.process_info.ttypes import ConnectionType as ConnType
 from cfgm_common.uve.nodeinfo.ttypes import NodeStatusUVE, \
     NodeStatus
 
@@ -1572,6 +1574,10 @@ class VncApiServer(object):
             except Exception as e:
                 err_msg = cfgm_common.utils.detailed_traceback()
                 self.config_log(err_msg, level=SandeshLevel.SYS_ERR)
+        else:
+            ConnectionState.update(conn_type=ConnType.OTHER,
+                name='Keystone', status=ConnectionStatus.UP, message='',
+                server_addrs=[])
 
         # following allowed without authentication
         self.white_list = [
