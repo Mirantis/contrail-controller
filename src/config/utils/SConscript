@@ -50,6 +50,7 @@ utils_scripts = [
   'contrail-diff-docs.py',
   'provision_issu.py',
   'issu_process.sh',
+  'rbacutil.py',
 ]
 
 for utils in utils_scripts:
