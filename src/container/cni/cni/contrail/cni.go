@@ -5,9 +5,16 @@
 package contrailCni
 
 import (
+	"contrail-kubernetes/cni/agent"
+	"contrail-kubernetes/cni/iptables"
+	"contrail-kubernetes/cni/utils"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
 	"../common"
 	log "../logging"
-	"encoding/json"
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/cni/pkg/version"
@@ -186,6 +193,19 @@ func (cni *ContrailCni) CmdAdd() error {
 		return err
 	}
 
+	var portSystemName string
+	portSystemName = intf.GetHostIfName()
+
+	var linkLocalIP string
+	err = utils.DoWithRetries(5, 500*time.Millisecond, func() error {
+		linkLocalIP, err = agent.GetLinkLocalIP(portSystemName)
+		return err
+	})
+	if err != nil {
+		log.Infof("Error geting link local ip for %s: %v\n", portSystemName, err)
+		return err
+	}
+
 	versionDecoder := &version.ConfigDecoder{}
 	confVersion, err := versionDecoder.Decode(cni.cniArgs.StdinData)
 	if err != nil {
@@ -193,6 +213,22 @@ func (cni *ContrailCni) CmdAdd() error {
 		return err
 	}
 	types.PrintResult(typesResult, confVersion)
+
+	if err := utils.DoWithRetries(10, 100*time.Millisecond, func() error {
+		if err := iptables.EnableContrailChains(); err != nil {
+			log.Infof("Error enabling contrail chains: %v\n", err)
+			return err
+		}
+		comment := strings.Join([]string{cni.ContainerName, "VRouter-linklocal"}, ":")
+		if err := iptables.AddDnatRuleFromToWithComment(result.Ip, linkLocalIP, comment); err != nil {
+			log.Infof("Error adding dnat rule to %s from %s with comment %s: %v\n",
+				result.Ip, linkLocalIP, comment, err)
+			return err
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -228,6 +264,11 @@ func (cni *ContrailCni) CmdDel() error {
 		cni.ContainerVn, updateAgent)
 	if err != nil {
 		log.Errorf("Error deleting interface from agent")
+	}
+
+	comment := strings.Join([]string{cni.ContainerName, "VRouter-linklocal"}, ":")
+	if err := iptables.DeleteDnatRulesByComment(comment); err != nil {
+		return fmt.Errorf("error deleting rules with comment %s: %v", comment, err)
 	}
 
 	// Build CNI response from response
