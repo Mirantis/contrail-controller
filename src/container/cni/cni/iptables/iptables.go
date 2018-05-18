@@ -19,11 +19,9 @@ package iptables
 import (
 	"bytes"
 	"fmt"
-	"log"
+	log "../logging"
 	"os/exec"
 	"strings"
-
-	"github.com/golang/glog"
 )
 
 const (
@@ -36,10 +34,10 @@ const (
 	iptablesBin             = "iptables"
 )
 
-// RunCommand executes specified command logs stdout and stderr in case of error
+// RunCommand executes specified command logs info and errors
 func RunCommand(name string, cmdParts ...string) (string, string, error) {
 	cmdParts = append(cmdParts, "-w 5")
-	log.Printf("Running command: %s %+v\n", name, cmdParts)
+	log.Infof("Running command: %s %+v\n", name, cmdParts)
 	cmd := exec.Command(name, cmdParts...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -47,10 +45,10 @@ func RunCommand(name string, cmdParts ...string) (string, string, error) {
 	if err != nil {
 		msg := fmt.Sprintf("Command %+v crashed. stdout: %s. stderr: %s . err %v",
 			cmdParts, string(stdout), stderr.String(), err)
-		log.Println(msg)
+		log.Info(msg)
 		return "", stderr.String(), fmt.Errorf(msg)
 	}
-	log.Printf("Stdout for command %+v - %s", cmdParts, stdout)
+	log.Infof("Stdout for command %+v - %s", cmdParts, stdout)
 	return string(stdout), stderr.String(), nil
 }
 
@@ -61,7 +59,7 @@ func createChain(chain, table string) (bool, error) {
 		return true, nil
 	}
 	if strings.TrimSpace(stderr) == chainExistError {
-		glog.Infof("chain %s already exists", chain)
+		log.Infof("chain %s already exists", chain)
 		return false, nil
 	}
 	return false, err
