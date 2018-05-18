@@ -5,15 +5,15 @@
 package contrailCni
 
 import (
-	"contrail-kubernetes/cni/agent"
-	"contrail-kubernetes/cni/iptables"
-	"contrail-kubernetes/cni/utils"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"../common"
+	"../iptables"
+	"../link_local_ip"
+	"../utils"
 	log "../logging"
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
