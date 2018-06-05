@@ -14,12 +14,22 @@ from sandesh_common.vns.ttypes import Module
 class DatabaseEventManager(EventManager):
     def __init__(self, config, unit_names):
         type_info = EventManagerTypeInfo(
-            object_table="ObjectDatabaseInfo",
-            module_type=Module.DATABASE_NODE_MGR,
-            sandesh_packages=['database.sandesh'])
-        super(DatabaseEventManager, self).__init__(
-            config, type_info, sandesh_global, unit_names)
-        # TODO: try to understand is next needed here and use it or remove
+            package_name = 'contrail-database',
+            object_table = "ObjectDatabaseInfo",
+            module_type = Module.DATABASE_NODE_MGR,
+            supervisor_serverurl = supervisor_serverurl,
+            third_party_processes =  {
+                "cassandra" : "Dcassandra-pidfile=.*cassandra\.pid",
+                "zookeeper" : "org.apache.zookeeper.server.quorum.QuorumPeerMain"
+            },
+            sandesh_packages = ['database.sandesh'])
+        super(DatabaseEventManager, self).__init__(config, type_info, rule_file,
+            sandesh_global, unit_names)
+        self.hostip = config.hostip
+        self.db_port = config.db_port
+        self.minimum_diskgb = config.minimum_diskgb
+        self.contrail_databases = config.contrail_databases
+        # TODO: try to understand is next needed for analytics db and use it or remove
         #self.cassandra_repair_interval = config.cassandra_repair_interval
         self.cassandra_mgr = CassandraManager(
             config.cassandra_repair_logdir, 'analytics',
