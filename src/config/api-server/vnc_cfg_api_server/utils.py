@@ -7,7 +7,7 @@ Provides utility routines for modules in api-server
 import argparse
 from cfgm_common import jsonutils as json
 import ConfigParser
-import gen.resource_xsd
+import vnc_api.gen.resource_xsd
 import vnc_quota
 import cfgm_common
 from pysandesh.sandesh_base import Sandesh, SandeshSystem, SandeshConfig
