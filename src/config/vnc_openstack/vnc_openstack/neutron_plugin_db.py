@@ -16,7 +16,10 @@ from netaddr import IPNetwork, IPSet, IPAddress
 import gevent
 import bottle
 
-from neutron.common import constants
+try:
+    from neutron_lib import constants
+except ImportError:
+    from neutron.common import constants
 
 from cfgm_common import exceptions as vnc_exc
 from vnc_api.vnc_api import *
@@ -3304,6 +3307,10 @@ class DBInterface(object):
                     msg='Router port must have exactly one fixed IP')
             subnet_id = fixed_ips[0]['subnet_id']
             subnet = self.subnet_read(subnet_id)
+            if not IPAddress(subnet['gateway_ip']):
+               self._raise_contrail_exception(
+                   'BadRequest', resource='router',
+                   msg='Subnet for router interface must have a gateway IP')
             self._check_for_dup_router_subnet(router_id,
                                               port['network_id'],
                                               subnet['id'],
@@ -3311,7 +3318,7 @@ class DBInterface(object):
 
         elif subnet_id:
             subnet = self.subnet_read(subnet_id)
-            if not subnet['gateway_ip']:
+            if not subnet['gateway_ip'] or not IPAddress(subnet['gateway_ip']):
                 self._raise_contrail_exception(
                     'BadRequest', resource='router',
                     msg='Subnet for router interface must have a gateway IP')
