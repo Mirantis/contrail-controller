@@ -15,10 +15,13 @@ from loadbalancer_stats import LoadbalancerStatsUVE
 class VrouterEventManager(EventManager):
     def __init__(self, config, unit_names):
         type_info = EventManagerTypeInfo(
-            module_type=Module.COMPUTE_NODE_MGR,
-            object_table='ObjectVRouter',
-            sandesh_packages=['vrouter.loadbalancer'])
-        super(VrouterEventManager, self).__init__(config, type_info,
+<<<<<<< HEAD
+            package_name = 'contrail-vrouter-agent',
+            module_type = Module.COMPUTE_NODE_MGR,
+            object_table = 'ObjectVRouter',
+            supervisor_serverurl = supervisor_serverurl,
+            sandesh_packages = ['vrouter.loadbalancer'])
+        super(VrouterEventManager, self).__init__(config, type_info, rule_file,
                 sandesh_global, unit_names, update_process_list=True)
         self.lb_stats = LoadbalancerStatsUVE(self.logger)
 
