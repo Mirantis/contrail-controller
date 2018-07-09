@@ -491,6 +491,7 @@ class VncApiServer(object):
                      'physical_router_management_ip', 'fq_name',
                      'physical_router_device_family',
                      'physical_router_vendor_name',
+                     'physical_router_product_name',
                      'fabric_back_refs'])
                 if not ok:
                     self.config_object_error(device_id, None,
@@ -514,6 +515,9 @@ class VncApiServer(object):
             device_vendor_name = result.get("physical_router_vendor_name")
             if device_vendor_name:
                 device_json.update({"device_vendor": device_vendor_name})
+            device_product_name = result.get("physical_router_product_name")
+            if device_product_name:
+                device_json.update({"device_product": device_product_name})
 
             device_data.update({device_id: device_json})
 
@@ -3000,11 +3004,6 @@ class VncApiServer(object):
             [t.replace('-', '_').strip() for t in
              self._args.object_cache_exclude_types.split(',')]
 
-        rdbms_server_list = self._args.rdbms_server_list
-        rdbms_user = self._args.rdbms_user
-        rdbms_password = self._args.rdbms_password
-        rdbms_connection = self._args.rdbms_connection
-
         db_engine = self._args.db_engine
         self._db_engine = db_engine
         cred = None
@@ -3014,11 +3013,6 @@ class VncApiServer(object):
             if cassandra_user is not None and cassandra_password is not None:
                 cred = {'username':cassandra_user,'password':cassandra_password}
             db_server_list = cass_server_list
-
-        if db_engine == 'rdbms':
-            db_server_list = rdbms_server_list
-            if rdbms_user is not None and rdbms_password is not None:
-                cred = {'username': rdbms_user,'password': rdbms_password}
 
         self._db_conn = VncDbClient(
             self, db_server_list, rabbit_servers, rabbit_port, rabbit_user,
@@ -3031,7 +3025,6 @@ class VncApiServer(object):
             kombu_ssl_ca_certs=self._args.kombu_ssl_ca_certs,
             obj_cache_entries=obj_cache_entries,
             obj_cache_exclude_types=obj_cache_exclude_types,
-            connection=rdbms_connection,
             cassandra_use_ssl=self._args.cassandra_use_ssl,
             cassandra_ca_certs=self._args.cassandra_ca_certs)
 
@@ -3367,15 +3360,38 @@ class VncApiServer(object):
                 cls_ob = cfgm_common.utils.str_to_class(cls_name, __name__)
 
                 # saving the objects to the database
-                for object in item.get("objects"):
-                    instance_obj = cls_ob(**object)
+                for obj in item.get("objects"):
+                    instance_obj = cls_ob(**obj)
                     self.create_singleton_entry(instance_obj)
+
                     # update default-global-system-config for supported_device_families
                     if object_type =='global_system_config':
                         fq_name = instance_obj.get_fq_name()
                         uuid = self._db_conn.fq_name_to_uuid(object_type, fq_name)
-                        self._db_conn.dbe_update(object_type, uuid, object)
+                        self._db_conn.dbe_update(object_type, uuid, obj)
 
+            for item in json_data.get("refs"):
+                from_type = item.get("from_type")
+                from_fq_name = item.get("from_fq_name")
+                from_uuid = self._db_conn._object_db.fq_name_to_uuid(
+                    from_type, from_fq_name
+                )
+
+                to_type = item.get("to_type")
+                to_fq_name = item.get("to_fq_name")
+                to_uuid = self._db_conn._object_db.fq_name_to_uuid(
+                    to_type, to_fq_name
+                )
+
+                ok, result = self._db_conn.ref_update(
+                    from_type,
+                    from_uuid,
+                    to_type,
+                    to_uuid,
+                    { 'attr': None },
+                    'ADD',
+                    None,
+                )
         except Exception as e:
             self.config_log('error while loading init data: ' + str(e),
                             level=SandeshLevel.SYS_NOTICE)
@@ -3648,7 +3664,6 @@ class VncApiServer(object):
                         obj_dicts.append(obj_result)
             else:
                 for obj_result in result:
-                    # TODO(nati) we should do this using sql query
                     id_perms = obj_result.get('id_perms')
 
                     if not id_perms:

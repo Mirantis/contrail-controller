@@ -49,8 +49,6 @@ def parse_args(args_str):
         'listen_port': _WEB_PORT,
         'admin_port': _ADMIN_PORT,
         'cassandra_server_list': "127.0.0.1:9160",
-        'rdbms_server_list': "127.0.0.1:3306",
-        'rdbms_connection_config': "",
         'collectors': None,
         'http_server_port': '8084',
         'log_local': True,
@@ -189,7 +187,6 @@ def parse_args(args_str):
     )
     defaults.update(ksopts)
     defaults.update(cassandraopts)
-    defaults.update(rdbmsopts)
     defaults.update(sandeshopts)
     parser.set_defaults(**defaults)
 
@@ -203,13 +200,6 @@ def parse_args(args_str):
     parser.add_argument(
         "--cassandra_ca_certs",
         help="Cassandra CA certs")
-    parser.add_argument(
-        "--rdbms_server_list",
-        help="List of cassandra servers in IP Address:Port format",
-        nargs='+')
-    parser.add_argument(
-        "--rdbms_connection",
-        help="DB Connection string")
     parser.add_argument(
         "--redis_server_ip",
         help="IP address of redis server")
