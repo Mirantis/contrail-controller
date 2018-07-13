@@ -11,7 +11,7 @@ from pysandesh.sandesh_base import sandesh_global
 from sandesh_common.vns.ttypes import Module
 
 
-class DatabaseEventManager(EventManager):
+class AnalyticsDatabaseEventManager(EventManager):
     def __init__(self, config, unit_names):
         type_info = EventManagerTypeInfo(
             package_name = 'contrail-database',
@@ -23,7 +23,7 @@ class DatabaseEventManager(EventManager):
                 "zookeeper" : "org.apache.zookeeper.server.quorum.QuorumPeerMain"
             },
             sandesh_packages = ['database.sandesh'])
-        super(DatabaseEventManager, self).__init__(config, type_info, rule_file,
+        super(AnalyticsDatabaseEventManager, self).__init__(config, type_info, rule_file,
             sandesh_global, unit_names)
         self.hostip = config.hostip
         self.db_port = config.db_port
@@ -33,7 +33,7 @@ class DatabaseEventManager(EventManager):
         #self.cassandra_repair_interval = config.cassandra_repair_interval
         self.cassandra_mgr = CassandraManager(
             config.cassandra_repair_logdir, 'analytics',
-            config.contrail_databases, config.hostip, config.minimum_diskgb,
+            config.hostip, config.minimum_diskgb,
             config.db_port, config.db_jmx_port,
             config.db_user, config.db_password,
             self.process_info_manager)
@@ -44,4 +44,4 @@ class DatabaseEventManager(EventManager):
 
     def do_periodic_events(self):
         self.cassandra_mgr.database_periodic(self)
-        super(DatabaseEventManager, self).do_periodic_events()
+        super(AnalyticsDatabaseEventManager, self).do_periodic_events()
