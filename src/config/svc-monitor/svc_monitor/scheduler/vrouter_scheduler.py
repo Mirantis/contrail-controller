@@ -106,11 +106,16 @@ class VRouterScheduler(object):
         path = "/analytics/uves/vrouter/"
         response_dict = {}
         try:
-            response = self._analytics.request(path, filter_string,
-                user_token=self._vnc_lib.get_auth_token())
+            if self._args.aaa_mode == 'no-auth':
+                user_token = None
+            else:
+                user_token = self._vnc_lib.get_auth_token()
+                response = self._analytics.request(path, filter_string,
+                                                   user_token=user_token)
             for values in response['value']:
                 response_dict[values['name']] = values['value']
         except Exception as e:
+            self._logger.error(str(e))
             return False, response_dict
         return True, response_dict
 
