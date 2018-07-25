@@ -87,6 +87,7 @@ def parse_args(args_str):
         'kombu_ssl_ca_certs': '',
         'object_cache_entries': '10000', # max number of objects cached for read
         'object_cache_exclude_types': '', # csv of object types to *not* cache
+        'debug_object_cache_types': '', # csv of object types to debug cache
         'db_engine': 'cassandra',
         'override_rpf_default_by': None,
         'max_request_size': 1024000,
@@ -331,6 +332,10 @@ def parse_args(args_str):
     parser.add_argument(
         "--object_cache_exclude_types",
         help="Comma separated values of object types to not cache")
+    parser.add_argument(
+        "--debug_object_cache_types",
+        help="Comma separated values of object types to debug trace between "
+             "the cache and the DB")
     parser.add_argument(
         "--db_engine",
         help="Database engine to use, default cassandra")
