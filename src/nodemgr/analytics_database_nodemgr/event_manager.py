@@ -13,6 +13,7 @@ from sandesh_common.vns.ttypes import Module
 
 class AnalyticsDatabaseEventManager(EventManager):
     def __init__(self, config, unit_names):
+        table = 'ObjectDatabaseInfo'
         type_info = EventManagerTypeInfo(
             package_name = 'contrail-database',
             object_table = "ObjectDatabaseInfo",
@@ -32,7 +33,7 @@ class AnalyticsDatabaseEventManager(EventManager):
         # TODO: try to understand is next needed for analytics db and use it or remove
         #self.cassandra_repair_interval = config.cassandra_repair_interval
         self.cassandra_mgr = CassandraManager(
-            config.cassandra_repair_logdir, 'analytics',
+            config.cassandra_repair_logdir, 'analytics', table,
             config.hostip, config.minimum_diskgb,
             config.db_port, config.db_jmx_port,
             config.db_user, config.db_password,
