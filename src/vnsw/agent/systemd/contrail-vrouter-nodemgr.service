@@ -1,5 +1,5 @@
 [Unit]
-StartLimitIntervalSec=0
+StartLimitInterval=0
 Description=Contrail vrouter nodemanager
 After=network.target
 
