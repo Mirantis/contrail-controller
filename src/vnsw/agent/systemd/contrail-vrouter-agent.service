@@ -1,5 +1,5 @@
 [Unit]
-StartLimitIntervalSec=0
+StartLimitInterval=0
 Description=Contrail vrouter agent service
 BindsTo=
 After=network.target
@@ -8,10 +8,9 @@ After=network.target
 RestartSec=3s
 Type=simple
 ExecStart=/usr/bin/contrail-vrouter-agent
-ExecStartPre=sh -c /usr/lib/contrail/exec-vrouter-pre-start.sh
-ExecStartPost=sh -c /usr/lib/contrail/exec-vrouter-post-start.sh
-ExecStopPost=sh -c /usr/lib/contrail/exec-vrouter-post-stop.sh
-PIDFile=/var/run/contrail/contrail-vrouter-agent.pid
+ExecStartPre=/usr/lib/contrail/exec-vrouter-pre-start.sh
+ExecStartPost=/usr/lib/contrail/exec-vrouter-post-start.sh
+ExecStopPost=/usr/lib/contrail/exec-vrouter-post-stop.sh
 TimeoutStopSec=0
 Restart=always
 ExecStop=/bin/kill -s TERM $MAINPID
@@ -19,10 +18,13 @@ PrivateTmp=yes
 ProtectHome=yes
 ReadOnlyDirectories=/
 ReadWriteDirectories=-/dev
+ReadWriteDirectories=-/lib/modules
 ReadWriteDirectories=-/run
+ReadWriteDirectories=-/sys
 ReadWriteDirectories=-/var/crashes
 ReadWriteDirectories=-/var/lib/contrail
 ReadWriteDirectories=-/var/log/contrail
+ReadWriteDirectories=-/var/log/contrail.log
 LimitCORE=infinity
 
 [Install]

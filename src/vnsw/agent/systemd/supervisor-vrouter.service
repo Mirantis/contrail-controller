@@ -1,5 +1,5 @@
 [Unit]
-StartLimitIntervalSec=0
+StartLimitInterval=0
 Description= Supervisor for contrail vrouter service
 After=syslog.target network.target
 
