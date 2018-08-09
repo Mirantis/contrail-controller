@@ -283,6 +283,7 @@ class UVEServer(object):
                     if tfilter is not None:
                         afilter_list = tfilter[typ]
 
+                    del_uvealarms = False
                     for attr, value in odict.iteritems():
                         if len(afilter_list):
                             if attr not in afilter_list:
@@ -318,6 +319,7 @@ class UVEServer(object):
                                         if ack == ackfilter:
                                             alarms.append(alarm)
                                     if not len(alarms):
+                                        del_uvealarms = True
                                         continue
                                     snhdict[attr]['list'][sname] = alarms
                                     snhdict[attr]['list']['@size'] = \
@@ -335,7 +337,17 @@ class UVEServer(object):
                             "Found Dup %s:%s:%s:%s:%s = %s" % \
                                 (key, typ, attr, source, mdule, state[
                                 key][typ][attr][dsource]))
+                        # To timestamp, we only keep latest source
+                        if attr == '__T' and flat:
+                            if len(state[key][typ][attr]) > 0:
+                                if state[key][typ][attr].values()[0] > snhdict[attr]:
+                                    continue
+                                else:
+                                    state[key][typ][attr].clear()
                         state[key][typ][attr][dsource] = snhdict[attr]
+
+                    if del_uvealarms and 'UVEAlarms' in state[key]:
+                        del state[key]['UVEAlarms']
 
                 pa = ParallelAggregator(state, self._uve_reverse_map)
                 rsp = pa.aggregate(key, flat, base_url)
@@ -373,8 +385,8 @@ class UVEServer(object):
         else:
             tables = self.get_tables()
             rsp = {}
-            uve_list = {}
             for table in tables:
+                uve_list = {}
                 if tablesfilt is not None:
                     if table not in tablesfilt:
                         continue
@@ -386,7 +398,8 @@ class UVEServer(object):
                         continue
                     else:
                         uve_list[uve_key] = uve_val
-                rsp[table] = uve_list
+                if len(uve_list):
+                    rsp[table] = uve_list
         return rsp
     # end get_alarms
 
