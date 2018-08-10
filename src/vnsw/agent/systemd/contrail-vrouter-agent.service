@@ -13,17 +13,6 @@ ExecStopPost=/usr/lib/contrail/exec-vrouter-post-stop.sh
 TimeoutStopSec=0
 Restart=always
 ExecStop=/bin/kill -s TERM $MAINPID
-PrivateTmp=yes
-ProtectHome=yes
-ReadOnlyDirectories=/
-ReadWriteDirectories=-/dev
-ReadWriteDirectories=-/lib/modules
-ReadWriteDirectories=-/run
-ReadWriteDirectories=-/sys
-ReadWriteDirectories=-/var/crashes
-ReadWriteDirectories=-/var/lib/contrail
-ReadWriteDirectories=-/var/log/contrail
-ReadWriteDirectories=-/var/log/contrail.log
 LimitCORE=infinity
 
 [Install]
