@@ -102,6 +102,8 @@ import discoveryclient.client as client
 # from gen_py.vnc_api.ttypes import *
 import netifaces
 from pysandesh.connection_info import ConnectionState
+from pysandesh.gen_py.process_info.ttypes import ConnectionStatus
+from pysandesh.gen_py.process_info.ttypes import ConnectionType as ConnType
 from cfgm_common.uve.nodeinfo.ttypes import NodeStatusUVE, \
     NodeStatus
 
@@ -1513,7 +1515,8 @@ class VncApiServer(object):
             self._db_init_entries()
 
         if (self._args.ifmap_listen_ip is not None and
-                self._args.ifmap_listen_port is not None):
+                self._args.ifmap_listen_port is not None and
+                self.get_worker_id() == 0):
             # As DB are synced, we can serve the custom IF-MAP server
             self._vnc_ifmap_server = VncIfmapServer(self, self._args)
             gevent.spawn(self._vnc_ifmap_server.run_server)
@@ -1571,6 +1574,10 @@ class VncApiServer(object):
             except Exception as e:
                 err_msg = cfgm_common.utils.detailed_traceback()
                 self.config_log(err_msg, level=SandeshLevel.SYS_ERR)
+        else:
+            ConnectionState.update(conn_type=ConnType.OTHER,
+                name='Keystone', status=ConnectionStatus.UP, message='',
+                server_addrs=[])
 
         # following allowed without authentication
         self.white_list = [
@@ -2884,6 +2891,8 @@ class VncApiServer(object):
 
         if int(self._args.worker_id) == 0:
             self._db_conn.db_resync()
+        else:
+            self._db_conn._db_resync_done.set()
 
         # make default ipam available across tenants for backward compatability
         obj_type = 'network_ipam'
