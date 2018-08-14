@@ -826,7 +826,7 @@ class VncApi(object):
                 try:
                     from neutron_lib.exceptions import OverQuota
                     raise OverQuota(overs=content)
-                except:
+                except ImportError:
                     from cfgm_common.exceptions import OverQuota
                     raise OverQuota(content)
             elif status == 409:
