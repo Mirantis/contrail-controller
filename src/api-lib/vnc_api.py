@@ -26,10 +26,11 @@ import cfgm_common
 from cfgm_common import rest, utils
 from cfgm_common import _obj_serializer_all
 from cfgm_common.exceptions import (
-        ServiceUnavailableError, NoIdError, PermissionDenied, OverQuota,
+        ServiceUnavailableError, NoIdError, PermissionDenied,
         RefsExistError, TimeOutError, BadRequest, HttpError,
         ResourceTypeUnknownError, AuthFailed)
 from cfgm_common import ssl_adapter
+from neutron_lib.exceptions import OverQuota
 
 
 def check_homepage(func):
@@ -969,7 +970,7 @@ class VncApi(object):
             elif status == 403:
                 raise PermissionDenied(content)
             elif status == 412:
-                raise OverQuota(content)
+                raise OverQuota(overs=content)
             elif status == 409:
                 raise RefsExistError(content)
             elif status == 504:
