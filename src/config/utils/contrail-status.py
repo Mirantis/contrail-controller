@@ -19,11 +19,24 @@ from sandesh_common.vns.constants import ServiceHttpPortMap, \
 
 DPDK_NETLINK_TCP_PORT = 20914
 
-try:
-    subprocess.check_call(["dpkg-vendor", "--derives-from", "debian"])
+distribution = platform.linux_distribution()[0].lower()
+if distribution.startswith('centos') or \
+   distribution.startswith('redhat'):
+    distribution = 'redhat'
+elif distribution.startswith('ubuntu'):
     distribution = 'debian'
+
+try:
+    with open(os.devnull, "w") as fnull:
+        subprocess.check_call(["pidof", "systemd"], stdout=fnull, stderr=fnull)
+    init = 'systemd'
 except:
-    distribution = 'centos'
+    try:
+        with open(os.devnull, "w") as fnull:
+            subprocess.check_call(["initctl", "list"], stdout=fnull, stderr=fnull)
+        init = 'upstart'
+    except:
+        init = 'sysv'
 
 class EtreeToDict(object):
     """Converts the xml etree to dictionary/list of dictionary."""
@@ -140,59 +153,67 @@ class IntrospectUtil(object):
 
 #end class IntrospectUtil
 
-def service_installed(svc, initd_svc):
-    if distribution == 'debian':
-        if initd_svc:
-            return os.path.exists('/etc/init.d/' + svc)
-        cmd = 'initctl show-config ' + svc
+def service_installed(svc):
+    if distribution == 'redhat':
+        cmd = 'chkconfig --list %s' % svc
     else:
-        cmd = 'chkconfig --list ' + svc
+        if init == 'systemd':
+            cmd = 'systemctl cat %s' % svc
+        elif init == 'upstart':
+            cmd = 'initctl show-config %s' % svc
+        else:
+            return os.path.exists('/etc/init.d/%s' % svc)
+
     with open(os.devnull, "w") as fnull:
         return not subprocess.call(cmd.split(), stdout=fnull, stderr=fnull)
 
-def service_bootstatus(svc, initd_svc):
-    if distribution == 'debian':
-        # On ubuntu/debian there does not seem to be an easy way to find
-        # the boot status for init.d services without going through the
-        # /etc/rcX.d level
-        if initd_svc:
-            if glob.glob('/etc/rc*.d/S*' + svc):
+def service_bootstatus(svc):
+    if distribution == 'redhat':
+        cmd = 'chkconfig %s' % svc
+    else:
+        if init == 'systemd':
+            cmd = 'systemctl is-enabled %s' % svc
+        elif init == 'upstart':
+            cmd = 'initctl show-config %s' % svc
+            cmdout = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE).communicate()[0]
+            if cmdout.find('  start on') != -1:
                 return ''
             else:
                 return ' (disabled on boot)'
-        cmd = 'initctl show-config ' + svc
-        cmdout = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE).communicate()[0]
-        if cmdout.find('  start on') != -1:
+        else:
+            # On ubuntu/debian there does not seem to be an easy way to find
+            # the boot status for init.d services without going through the
+            # /etc/rcX.d level
+            if glob.glob('/etc/rc*.d/S*%s' % svc):
+                return ''
+            else:
+                return ' (disabled on boot)'
+
+    with open(os.devnull, "w") as fnull:
+        if not subprocess.call(cmd.split(), stdout=fnull, stderr=fnull):
             return ''
         else:
             return ' (disabled on boot)'
-    else:
-        cmd = 'chkconfig ' + svc
-        with open(os.devnull, "w") as fnull:
-            if not subprocess.call(cmd.split(), stdout=fnull, stderr=fnull):
-                return ''
-            else:
-                return ' (disabled on boot)'
 
-def service_status(svc, initd_svc):
-    cmd = 'service ' + svc + ' status'
-    p = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE)
-    cmdout = p.communicate()[0]
-    if initd_svc:
-        if p.returncode == 0 or 'Active: active' in cmdout:
+def service_status(svc):
+    if init == 'systemd':
+        cmd = 'systemctl status %s' % svc
+    elif init == 'upstart':
+        cmd = 'initctl status %s' % svc
+    else:
+        cmd = 'service %s status | grep -i -e running -e active' % svc
+
+    with open(os.devnull, "w") as fnull:
+        if not subprocess.call(cmd.split(), stdout=fnull, stderr=fnull):
             return 'active'
         else:
             return 'inactive'
-    if cmdout.find('running') != -1:
-        return 'active'
-    else:
-        return 'inactive'
 
-def check_svc(svc, initd_svc=False):
+def check_svc(svc):
     psvc = svc + ':'
-    if service_installed(svc, initd_svc):
-        bootstatus = service_bootstatus(svc, initd_svc)
-        status = service_status(svc, initd_svc)
+    if service_installed(svc):
+        bootstatus = service_bootstatus(svc)
+        status = service_status(svc)
     else:
         bootstatus = ' (disabled on boot)'
         status='inactive'
@@ -200,6 +221,31 @@ def check_svc(svc, initd_svc=False):
 
 _DEFAULT_CONF_FILE_DIR = '/etc/contrail/'
 _DEFAULT_CONF_FILE_EXTENSION = '.conf'
+
+def get_http_server_port_from_cmdline_options(svc_name, debug):
+    name, instance = svc_name, None
+    name_instance = svc_name.rsplit(':', 1)
+    if len(name_instance) == 2:
+        name, instance = name_instance
+    cmd = 'ps -eaf | grep %s | grep http_server_port' % (name)
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
+    cmdout = p.communicate()[0]
+    processes = cmdout.splitlines()
+    for p in processes:
+        p = p.split()
+        try:
+            if instance:
+                wi = p.index('--worker_id')
+                if instance == p[wi+1]:
+                    pi = p.index('--http_server_port')
+                    return int(p[pi+1])
+            else:
+                pi = p.index('--http_server_port')
+                return int(p[pi+1])
+        except ValueError:
+            continue
+    return -1
+# end get_http_server_port_from_cmdline_options
 
 def get_http_server_port_from_conf(svc_name, debug):
     # Open and extract conf file
@@ -257,7 +303,9 @@ def get_default_http_server_port(svc_name, debug):
         return -1
 
 def get_http_server_port(svc_name, debug):
-    http_server_port = get_http_server_port_from_conf(svc_name, debug)
+    http_server_port = get_http_server_port_from_cmdline_options(svc_name, debug)
+    if http_server_port == -1:
+        http_server_port = get_http_server_port_from_conf(svc_name, debug)
     if http_server_port == -1:
         http_server_port = get_default_http_server_port(svc_name, debug)
     return http_server_port
@@ -321,7 +369,8 @@ def check_svc_status(service_name, debug, detail, timeout):
                 # Extract UVE state only for running processes
                 svc_uve_description = None
                 if (svc_name in NodeUVEImplementedServices or
-                    svc_name.rsplit('-', 1)[0] in NodeUVEImplementedServices) and svc_status == 'active':
+                    svc_name.rsplit('-', 1)[0] in NodeUVEImplementedServices or
+                    svc_name.rsplit(':', 1)[0] in NodeUVEImplementedServices) and svc_status == 'active':
                     try:
                         svc_uve_status, svc_uve_description = get_svc_uve_status(svc_name, debug, timeout)
                     except requests.ConnectionError, e:
@@ -373,17 +422,10 @@ def supervisor_status(nodetype, options):
         check_status('supervisor-analytics', options)
     elif nodetype == 'database':
         print "== Contrail Database =="
-        check_svc('contrail-database', initd_svc=True)
+        check_svc('contrail-database')
         print ""
         print "== Contrail Supervisor Database =="
         check_status('supervisor-database', options)
-    elif nodetype == 'webui':
-        print "== Contrail Web UI =="
-        check_status('supervisor-webui', options)
-    elif nodetype == 'support-service' and \
-         distribution == 'debian':
-        print "== Contrail Support Services =="
-        check_status('supervisor-support-service', options)
 
 def package_installed(pkg):
     if distribution == 'debian':
@@ -391,7 +433,7 @@ def package_installed(pkg):
         # Handling virtual package in ubuntu
         if pkg == 'contrail-vrouter':
             cmd = "dpkg -l " + pkg
-    else:
+    elif distribution == 'redhat':
         cmd = "rpm -q --qf %{V} " + pkg
     with open(os.devnull, "w") as fnull:
         try:
