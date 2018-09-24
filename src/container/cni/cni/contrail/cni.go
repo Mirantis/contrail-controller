@@ -13,8 +13,8 @@ import (
 	"../common"
 	"../iptables"
 	"../link_local_ip"
-	"../utils"
 	log "../logging"
+	"../utils"
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/cni/pkg/version"
@@ -179,6 +179,10 @@ func (cni *ContrailCni) CmdAdd() error {
 		cni.ContainerVn, cni.cniArgs.ContainerID, cni.cniArgs.Netns,
 		cni.cniArgs.IfName, intf.GetHostIfName(), updateAgent)
 	if err != nil {
+		// Interface which is not registered by vrouter should be deleted
+		// Fix for stale interfaces created by K8s conformance test.
+		cni.VRouter.Del(cni.cniArgs.ContainerID, cni.ContainerUuid,
+			cni.ContainerVn, updateAgent)
 		log.Infof("Error in Add to VRouter")
 		return err
 	}
