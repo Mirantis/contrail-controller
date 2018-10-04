@@ -8,25 +8,26 @@
 package contrailCni
 
 import (
-	log "../logging"
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/containernetworking/cni/pkg/types"
-	"github.com/containernetworking/cni/pkg/types/current"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
+
+	log "../logging"
+	"github.com/containernetworking/cni/pkg/types"
+	"github.com/containernetworking/cni/pkg/types/current"
 )
 
 // Default VRouter values
 const VROUTER_AGENT_IP = "127.0.0.1"
 const VROUTER_AGENT_PORT = 9091
-const VROUTER_POLL_TIMEOUT = 3
-const VROUTER_POLL_RETRIES = 20
+const VROUTER_POLL_TIMEOUT = 10
+const VROUTER_POLL_RETRIES = 30
 
 //Directory containing configuration for the container
 const VROUTER_CONFIG_DIR = "/var/lib/contrail/ports/vm"
@@ -171,6 +172,7 @@ func (vrouter *VRouter) Get(url string) (*Result, error) {
 func (vrouter *VRouter) PollUrl(url string) (*Result, error) {
 	var msg string
 	for i := 0; i < vrouter.PollRetries; i++ {
+		vrouter.SyncPorts()
 		result, err := vrouter.Get(url)
 		if err == nil {
 			log.Infof("Get from vrouter passed. Result %+v", result)
@@ -278,6 +280,7 @@ func (vrouter *VRouter) Add(containerName, containerUuid, containerVn,
 		err := vrouter.addVmToAgent(addMsg)
 		if err != nil {
 			log.Errorf("Error in Add to VRouter")
+			vrouter.delVmFile()
 			return nil, err
 		}
 	}
@@ -285,6 +288,10 @@ func (vrouter *VRouter) Add(containerName, containerUuid, containerVn,
 	result, poll_err := vrouter.PollUrl("/vm")
 	if poll_err != nil {
 		log.Errorf("Error in polling VRouter")
+		vrouter.delVmFile()
+		if updateAgent == true {
+			vrouter.delVmToAgent()
+		}
 		return nil, poll_err
 	}
 
@@ -433,6 +440,22 @@ func (vrouter *VRouter) Poll(containerUuid, containerVn string) (*Result,
 	}
 
 	return result, nil
+}
+
+/****************************************************************************
+ *  Sync ports
+ ****************************************************************************/
+func (vrouter *VRouter) SyncPorts() (*Result,
+	error) {
+	result, err := vrouter.Get("/syncports")
+	if err == nil {
+		log.Infof("Get from vrouter passed. Result %+v", result)
+		return result, nil
+	}
+	msg := fmt.Sprintf("vRouter port synchronization Error : %v\n",
+		err)
+	log.Errorf(msg)
+	return nil, fmt.Errorf(msg)
 }
 
 /****************************************************************************

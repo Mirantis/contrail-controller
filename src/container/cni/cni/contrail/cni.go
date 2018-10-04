@@ -13,8 +13,8 @@ import (
 	"../common"
 	"../iptables"
 	"../link_local_ip"
-	"../utils"
 	log "../logging"
+	"../utils"
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/cni/pkg/version"
@@ -219,7 +219,7 @@ func (cni *ContrailCni) CmdAdd() error {
 			log.Infof("Error enabling contrail chains: %v\n", err)
 			return err
 		}
-		comment := strings.Join([]string{cni.ContainerName, "VRouter-linklocal"}, ":")
+		comment := strings.Join([]string{cni.ContainerName, cni.ContainerUuid, "VRouter-linklocal"}, ":")
 		if err := iptables.AddDnatRuleFromToWithComment(result.Ip, linkLocalIP, comment); err != nil {
 			log.Infof("Error adding dnat rule to %s from %s with comment %s: %v\n",
 				result.Ip, linkLocalIP, comment, err)
@@ -266,7 +266,7 @@ func (cni *ContrailCni) CmdDel() error {
 		log.Errorf("Error deleting interface from agent")
 	}
 
-	comment := strings.Join([]string{cni.ContainerName, "VRouter-linklocal"}, ":")
+	comment := strings.Join([]string{cni.ContainerName, cni.ContainerUuid, "VRouter-linklocal"}, ":")
 	if err := iptables.DeleteDnatRulesByComment(comment); err != nil {
 		return fmt.Errorf("error deleting rules with comment %s: %v", comment, err)
 	}

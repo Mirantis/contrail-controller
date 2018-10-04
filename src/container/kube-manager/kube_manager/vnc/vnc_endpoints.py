@@ -265,7 +265,7 @@ class VncEndpoints(VncCommon):
 
             # If Pod present in both lists, do nothing
 
-    def vnc_endpoint_delete(self, uid, name, namespace):
+    def vnc_endpoint_delete(self, uid, name, namespace, event):
         # Does service exists in contrail-api server,
         # If No, log and return
         exists, service_id = self._is_service_exists(name, namespace)
@@ -279,7 +279,7 @@ class VncEndpoints(VncCommon):
 
         #Get curr list of Pods matching Service Selector as listed
         # in 'event' elements.
-        cur_pod_ids = self._get_service_pod_list(event)
+        cur_pod_ids, ports = self._get_service_pod_list(event)
 
         # Compare 2 lists. Should be same.. any diff is a sign of warning
         pod_diff = set(prev_pod_ids) - set(cur_pod_ids)
@@ -303,4 +303,4 @@ class VncEndpoints(VncCommon):
         if event['type'] == 'ADDED' or event['type'] == 'MODIFIED':
             self.vnc_endpoint_add(uid, name, namespace, event)
         elif event['type'] == 'DELETED':
-            self.vnc_endpoint_delete(uid, name, namespace)
+            self.vnc_endpoint_delete(uid, name, namespace, event)
