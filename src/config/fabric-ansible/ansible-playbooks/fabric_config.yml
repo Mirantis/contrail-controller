@@ -17,11 +17,18 @@
     device_phy_role: "{{ device_info.physical_role }}"
     device_rb_roles: "{{ device_info.routing_bridging_roles if device_info.routing_bridging_roles is defined else [] }}"
     is_delete: "{{ input.is_delete }}"
+    is_ztp: "{{ input.is_ztp }}"
     output: {"status":"", "message":"", "results":""}
 
   pre_tasks:
     - set_fact:
         job_ctx: "{{job_ctx|combine({'total_task_count':2, 'task_weightage_array':[20, 80] })}}"
+
+    - name: Update job log with percentage
+      include_tasks: percentage_update.yml
+      vars:
+        current_index: 1
+        jl_message: "Config push for device {{ device_mgmt_ip }} started"
 
     - set_fact:
         device_abstract_config: "{{input.device_abstract_config}}"
@@ -42,7 +49,7 @@
 
   roles:
     - cfg_basic
-    - cfg_ip_clos
+    - cfg_underlay_ip_clos
     - cfg_overlay_bgp
     - cfg_overlay_evpn
     - cfg_overlay_evpn_access
@@ -66,6 +73,12 @@
         onboarding_state: "{{ DEVICE_STATE.UNDERLAY_CONFIGURED }}"
       when: input.is_delete is undefined or input.is_delete == False
 
+    - name: Update job log with percentage
+      include_tasks: percentage_update.yml
+      vars:
+        current_index: 2
+        jl_message: "Underlay config successful for: {{device_mgmt_ip}}"
+        
     - set_fact:
         output: {
               "status": "Success",

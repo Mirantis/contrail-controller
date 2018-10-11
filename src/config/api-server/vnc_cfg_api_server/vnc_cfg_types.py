@@ -79,6 +79,50 @@ class ResourceDbMixin(object):
         return True, quota_limit, proj_uuid
 
     @classmethod
+    def no_pending_deleted_resource_in_refs(cls, obj_dict):
+        # Check if any reference points to a pending deleted resource
+        if not obj_dict:
+            return True, ''
+
+        refs = [(ref_type, ref.get('to'), ref.get('uuid'))
+                for ref_type in constants.SECURITY_OBJECT_TYPES
+                for ref in obj_dict.get('%s_refs' % ref_type, [])]
+        for ref_type, ref_fq_name, ref_uuid in refs:
+            ref_class = cls.server.get_resource_class(ref_type)
+            ok, result = ref_class.locate(
+                fq_name=ref_fq_name,
+                uuid=ref_uuid,
+                create_it=False,
+                fields=['fq_name', 'parent_type', 'draft_mode_state'],
+            )
+            if not ok:
+                return False, result
+            ref = result
+            if (ref['fq_name'][-2] !=
+                    constants.POLICY_MANAGEMENT_NAME_FOR_SECURITY_DRAFT):
+                ok, result = ref_class.get_pending_resource(
+                    ref, fields=['draft_mode_state'])
+                if ok and result == '':
+                    # draft mode not enabled
+                    continue
+                elif not ok and isinstance(result, tuple) and result[0] == 404:
+                    # draft mode enabled, but no draft version of the
+                    # referenced resource
+                    continue
+                elif not ok:
+                    return False, result
+                draft_ref = result
+            else:
+                draft_ref = ref
+            if draft_ref.get('draft_mode_state') == 'deleted':
+                msg = ("Referenced %s resource '%s' (%s) is in pending delete "
+                       "state, it cannot be referenced" %
+                       (ref_type.replace('_', ' ').title(),
+                        ':'.join(ref['fq_name']), ref_uuid))
+                return False, (400, msg)
+        return True, ''
+
+    @classmethod
     def pending_dbe_create(cls, obj_dict):
         return True, ''
 
@@ -577,6 +621,7 @@ class SecurityResourceBase(Resource):
                 return False, (400, msg)
             except cfgm_common.exceptions.NoIdError as e:
                 pass
+
         obj_dict['parent_type'] = PolicyManagementServer.resource_type
         obj_dict['parent_uuid'] = draft_pm['uuid']
         obj_dict.pop('fq_name', None)
@@ -5197,6 +5242,10 @@ class LogicalInterfaceServer(Resource, LogicalInterface):
 
     @classmethod
     def pre_dbe_update(cls, id, fq_name, obj_dict, db_conn, **kwargs):
+        (ok, result) = cls._check_vlan(obj_dict, db_conn)
+        if not ok:
+            return (ok, result)
+
         ok, read_result = cls.dbe_read(db_conn, 'logical_interface', id)
         if not ok:
             return ok, read_result
@@ -5212,15 +5261,22 @@ class LogicalInterfaceServer(Resource, LogicalInterface):
             if 'logical_interface_vlan_tag' in read_result:
                 if int(vlan) != int(read_result.get('logical_interface_vlan_tag')):
                     return (False, (403, "Cannot change Vlan id"))
-            else:
-                obj_dict['display_name'] = read_result.get('display_name')
-                obj_dict['fq_name'] = read_result['fq_name']
-                obj_dict['parent_type'] = read_result['parent_type']
-                ok, result = PhysicalInterfaceServer._check_interface_name(obj_dict,
-                                                                           db_conn,
-                                                                           vlan)
-                if not ok:
-                    return ok, result
+
+        if vlan == None:
+            vlan = read_result.get('logical_interface_vlan_tag')
+
+        obj_dict['display_name'] = read_result.get('display_name')
+        obj_dict['fq_name'] = read_result['fq_name']
+        obj_dict['parent_type'] = read_result['parent_type']
+        if 'logical_interface_type' not in obj_dict:
+            existing_li_type = read_result.get('logical_interface_type')
+            if existing_li_type:
+                obj_dict['logical_interface_type'] = existing_li_type
+        ok, result = PhysicalInterfaceServer._check_interface_name(obj_dict,
+                                                                   db_conn,
+                                                                   vlan)
+        if not ok:
+            return ok, result
 
         ok, result = cls._check_esi(obj_dict, db_conn,
                                     read_result.get('logical_interface_vlan_tag'),
@@ -5441,9 +5497,11 @@ class PhysicalInterfaceServer(Resource, PhysicalInterface):
         # In case of QFX, check that VLANs 1, 2 and 4094 are not used
         product_name = physical_router.get('physical_router_product_name') or ""
         if product_name.lower().startswith("qfx") and vlan_tag != None:
-            if vlan_tag == 1 or vlan_tag == 2 or vlan_tag == 4094:
-                return (False, (403, "Vlan id " + str(vlan_tag) + " is not allowed on QFX"))
-
+            li_type = obj_dict.get('logical_interface_type', '').lower()
+            if li_type =='l2' and vlan_tag in constants.RESERVED_QFX_L2_VLAN_TAGS:
+                return (False, (400, "Vlan ids " + str(constants.RESERVED_QFX_L2_VLAN_TAGS) +
+                                " are not allowed on QFX"
+                                " logical interface type: " + li_type))
         for physical_interface in physical_router.get('physical_interfaces') or []:
             # Read only the display name of the physical interface
             (ok, interface_object) = cls.dbe_read(db_conn,
@@ -5481,9 +5539,10 @@ class PhysicalInterfaceServer(Resource, PhysicalInterface):
                 # check vlan tags on the same physical interface
                 if 'logical_interface_vlan_tag' in li_object:
                     if vlan_tag == int(li_object['logical_interface_vlan_tag']):
-                        return (False, (403, "Vlan tag  " + str(vlan_tag) +
-                                        " already used in another "
-                                        "interface : " + li_object['uuid']))
+                        if li_object['uuid'] != obj_dict['uuid']:
+                            return (False, (403, "Vlan tag  " + str(vlan_tag) +
+                                            " already used in another "
+                                            "interface : " + li_object['uuid']))
 
         return True, ""
     # end _check_interface_name
@@ -6310,3 +6369,4 @@ class RoutingPolicyServer(Resource, RoutingPolicy):
             return False, (400, msg)
         return True, ""
 # end class RoutingPolicyServer
+

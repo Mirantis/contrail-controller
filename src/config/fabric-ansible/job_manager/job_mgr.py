@@ -62,7 +62,9 @@ class JobManager(object):
             self._logger.debug("Device data is not passed from api server.")
 
         self.auth_token = job_input_json['auth_token']
+        self.api_server_host = job_input_json['api_server_host']
 
+        self.analytics_server_list = job_input_json['analytics_server_list']
         self.sandesh_args = job_input_json['args']
         self.max_job_task = self.job_log_utils.args.max_job_task
 
@@ -74,7 +76,9 @@ class JobManager(object):
                                  self.job_template, self.job_execution_id,
                                  self.job_data,
                                  self.job_utils, self.device_json,
-                                 self.auth_token, self.job_log_utils,
+                                 self.auth_token, self.api_server_host,
+                                 self.analytics_server_list,
+                                 self.job_log_utils,
                                  self.sandesh_args, self.fabric_fq_name,
                                  self.job_log_utils.args.playbook_timeout,
                                  self.playbook_seq)
@@ -96,23 +100,33 @@ class JobManager(object):
                 len(self.device_json), buffer_task_percent=False,
                 total_percent=self.job_percent)[0]
         for device_id in self.device_json:
+            if device_id in result_handler.failed_device_jobs:
+                self._logger.debug("Not executing the next operation"
+                                   "in the workflow for device: %s" % device_id)
+                continue
+
             device_data = self.device_json.get(device_id)
             device_fqname = ':'.join(
                 map(str, device_data.get('device_fqname')))
-            job_template_fq_name = ':'.join(
-                map(str, self.job_template.fq_name))
-            pr_fabric_job_template_fq_name = device_fqname + ":" + \
-                self.fabric_fq_name + ":" + \
-                job_template_fq_name
-            self.job_log_utils.send_prouter_job_uve(
-                self.job_template.fq_name,
-                pr_fabric_job_template_fq_name,
-                self.job_execution_id,
-                job_status="IN_PROGRESS")
+            device_name = device_data.get('device_fqname', [""])[-1]
+            # create prouter UVE in job_manager only if it is not a multi
+            # device job template
+            if not self.job_template.get_job_template_multi_device_job():
+                job_template_fq_name = ':'.join(
+                    map(str, self.job_template.fq_name))
+                pr_fabric_job_template_fq_name = device_fqname + ":" + \
+                    self.fabric_fq_name + ":" + \
+                    job_template_fq_name
+                self.job_log_utils.send_prouter_job_uve(
+                    self.job_template.fq_name,
+                    pr_fabric_job_template_fq_name,
+                    self.job_execution_id,
+                    job_status="IN_PROGRESS")
 
             job_worker_pool.start(Greenlet(job_handler.handle_job,
                                            result_handler,
-                                           job_percent_per_task, device_id))
+                                           job_percent_per_task, device_id,
+                                           device_name))
         job_worker_pool.join()
 
     def handle_single_job(self, job_handler, result_handler):
@@ -243,9 +257,26 @@ class WFManager(object):
 
                 # stop the workflow if playbook failed
                 if self.result_handler.job_result_status == JobStatus.FAILURE:
-                    self._logger.error(
-                        "Stop the workflow on the failed Playbook.")
-                    break
+
+                    # stop workflow only if its a single device job or
+                    # it is a multi device playbook
+                    # and all the devices have failed some job execution
+                    # declare it as failure and the stop the workflow
+
+                    if self.job_input.get('device_json') is None or\
+                        len(self.result_handler.failed_device_jobs)\
+                            == len(self.job_input['device_json']):
+                        self._logger.error(
+                            "Stop the workflow on the failed Playbook.")
+                        break
+
+                    else:
+                        # it is a multi device playbook but one of the device jobs
+                        # have failed. This means we should still declare
+                        # the operation as success. We declare workflow as
+                        # success even if one of the devices has succeeded the job
+
+                        self.result_handler.job_result_status = JobStatus.SUCCESS
 
                 # update the job input with marked playbook output json
                 pb_output = self.result_handler.playbook_output or {}
@@ -328,6 +359,7 @@ if __name__ == "__main__":
     vnc_api = None
     try:
         auth_token = job_input_json['auth_token']
+
         vnc_api = VncApi(auth_token=auth_token)
         logger.info("VNC api is initialized using the auth token passed.")
     except Exception as exp:

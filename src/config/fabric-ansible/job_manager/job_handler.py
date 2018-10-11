@@ -7,6 +7,7 @@ This file contains job manager api which involves playbook interactions
 """
 
 import os
+import random
 import uuid
 import json
 import subprocess32
@@ -28,8 +29,10 @@ PLAYBOOK_OUTPUT = 'PLAYBOOK_OUTPUT##'
 class JobHandler(object):
 
     def __init__(self, logger, vnc_api, job_template, execution_id, input,
-                 job_utils, device_json, auth_token, job_log_utils,
-                 sandesh_args, fabric_fq_name, playbook_timeout, playbook_seq):
+                 job_utils, device_json, auth_token, api_server_host,
+                 analytics_server_list, job_log_utils, sandesh_args, \
+                 fabric_fq_name,
+                 playbook_timeout, playbook_seq):
         self._logger = logger
         self._vnc_api = vnc_api
         self._job_template = job_template
@@ -38,15 +41,18 @@ class JobHandler(object):
         self._job_utils = job_utils
         self._device_json = device_json
         self._auth_token = auth_token
+        self._api_server_host = api_server_host
+        self._analytics_server_list = analytics_server_list
         self._job_log_utils = job_log_utils
         self._sandesh_args = sandesh_args
         self._fabric_fq_name = fabric_fq_name
         self._playbook_timeout = playbook_timeout
         self._playbook_seq = playbook_seq
-        self._playbook_output = None
     # end __init__
 
-    def handle_job(self, result_handler, job_percent_per_task, device_id=None):
+    def handle_job(self, result_handler, job_percent_per_task,
+                   device_id=None, device_name=None):
+        playbook_output = None
         try:
             msg = "Starting playbook execution for job template %s with " \
                   "execution id %s" % (self._job_template.get_uuid(),
@@ -56,8 +62,8 @@ class JobHandler(object):
             # get the playbook information from the job template
             playbook_info = self.get_playbook_info(job_percent_per_task,
                                                    device_id)
-            # run the playbook
-            self.run_playbook(
+            # run the playbook and retrieve the playbook output if any
+            playbook_output = self.run_playbook(
                 playbook_info,
                 result_handler.percentage_completed)
 
@@ -66,19 +72,24 @@ class JobHandler(object):
                 job_template_name=self._job_template.get_fq_name()[-1],
                 job_execution_id=self._execution_id)
             self._logger.debug(msg)
-            result_handler.update_job_status(JobStatus.SUCCESS, msg, device_id)
-            self.update_result_handler(result_handler)
+            result_handler.update_job_status(JobStatus.SUCCESS, msg,
+                                             device_id, device_name)
+            if playbook_output:
+                result_handler.update_playbook_output(playbook_output)
+
+            if self.current_percentage:
+                result_handler.percentage_completed = self.current_percentage
 
         except JobException as job_exp:
             self._logger.error("%s" % job_exp.msg)
             self._logger.error("%s" % traceback.format_exc())
             result_handler.update_job_status(JobStatus.FAILURE, job_exp.msg,
-                                             device_id)
+                                             device_id, device_name)
         except Exception as exp:
             self._logger.error("Error while executing job %s " % repr(exp))
             self._logger.error("%s" % traceback.format_exc())
             result_handler.update_job_status(JobStatus.FAILURE, exp.message,
-                                             device_id)
+                                             device_id, device_name)
     # end handle_job
 
     def get_playbook_info(self, job_percent_per_task, device_id=None):
@@ -90,6 +101,7 @@ class JobHandler(object):
                 'job_template_fqname': self._job_template.fq_name,
                 'fabric_fq_name': self._fabric_fq_name,
                 'auth_token': self._auth_token,
+                'api_server_host': self._api_server_host,
                 'job_execution_id': self._execution_id,
                 'args': self._sandesh_args,
                 'playbook_job_percentage': job_percent_per_task
@@ -174,7 +186,8 @@ class JobHandler(object):
     # end get_playbook_info
 
     def process_file_and_get_marked_output(self, unique_pb_id,
-                                           exec_id, playbook_process):
+                                           exec_id, playbook_process, 
+                                           pr_uve_name):
         f_read = None
         marked_output = {}
         markers = [PLAYBOOK_OUTPUT, JOB_PROGRESS]
@@ -220,6 +233,14 @@ class JobHandler(object):
                                                 exec_id,
                                                 percentage_completed=
                                                 self.current_percentage)
+                                        if pr_uve_name:
+                                            self._job_log_utils.\
+                                                send_prouter_job_uve(
+                                                    self._job_template.fq_name,
+                                                    pr_uve_name, exec_id,
+                                                    job_status="IN_PROGRESS",
+                                                    percentage_completed=
+                                                    self.current_percentage)
                     else:
                         # this sleep is essential
                         # to yield the context to
@@ -250,13 +271,14 @@ class JobHandler(object):
         return marked_output
     # end process_file_and_get_marked_output
 
-    def send_pr_object_log(self, exec_id, start_time, end_time, pb_status):
+    def send_prouter_uve(self, exec_id, start_time, end_time, pb_status):
         status = "SUCCESS"
         elapsed_time = end_time - start_time
 
         if pb_status != 0:
             status = "FAILURE"
 
+        analytics_node_ip = random.choice(self._analytics_server_list)
         payload = {
             'start_time': 'now-%ds' % (elapsed_time),
             'end_time': 'now',
@@ -272,7 +294,7 @@ class JobHandler(object):
                 ]
             ]
         }
-        url = "http://localhost:8081/analytics/query"
+        url = "http://" + analytics_node_ip + ":8081/analytics/query"
 
         resp = requests.post(url, json=payload)
         if resp.status_code == 200:
@@ -301,6 +323,9 @@ class JobHandler(object):
 
     def run_playbook_process(self, playbook_info, percentage_completed):
         playbook_process = None
+        playbook_output = None
+        pr_uve_name = None
+
         self.current_percentage = percentage_completed
         try:
             playbook_exec_path = os.path.dirname(__file__) \
@@ -311,6 +336,15 @@ class JobHandler(object):
             exec_id =\
                 playbook_info['extra_vars']['playbook_input'][
                     'job_execution_id']
+
+            device_fqname = \
+                playbook_info['extra_vars']['playbook_input'].get(
+                    'device_fqname')
+            if device_fqname:
+                pr_fqname = ':'.join(map(str, device_fqname))
+                job_template_fq_name = ':'.join(map(str, self._job_template.fq_name))
+                pr_uve_name = pr_fqname + ":" + \
+                    self._fabric_fq_name + ":" + job_template_fq_name
 
             pr_object_log_start_time = time.time()
 
@@ -323,18 +357,21 @@ class JobHandler(object):
             # they start running concurrently
             gevent.sleep(0)
             marked_output = self.process_file_and_get_marked_output(
-                unique_pb_id, exec_id, playbook_process
-            )
+                unique_pb_id, exec_id, playbook_process, pr_uve_name)
+
             marked_jsons = self._extract_marked_json(marked_output)
-            self._playbook_output = marked_jsons.get(PLAYBOOK_OUTPUT)
+            playbook_output = marked_jsons.get(PLAYBOOK_OUTPUT)
             playbook_process.wait(timeout=self._playbook_timeout)
             pr_object_log_end_time = time.time()
 
-            self.send_pr_object_log(
-                exec_id,
-                pr_object_log_start_time,
-                pr_object_log_end_time,
-                playbook_process.returncode)
+            # create prouter UVE in job_manager only if it is not a multi 
+            # device job template
+            if not self._job_template.get_job_template_multi_device_job():
+                self.send_prouter_uve(
+                    exec_id,
+                    pr_object_log_start_time,
+                    pr_object_log_end_time,
+                    playbook_process.returncode)
 
         except subprocess32.TimeoutExpired as timeout_exp:
             if playbook_process is not None:
@@ -356,10 +393,17 @@ class JobHandler(object):
             msg = MsgBundle.getMessage(MsgBundle.
                                        PLAYBOOK_EXIT_WITH_ERROR,
                                        playbook_uri=playbook_info['uri'])
+
+            if playbook_output:
+                msg = msg + "\n Error Message from playbook: %s" % playbook_output.get('message', "")
             raise JobException(msg, self._execution_id)
+
+        return playbook_output
+
     # end run_playbook_process
 
     def run_playbook(self, playbook_info, percentage_completed):
+        playbook_output = None
         try:
             # create job log to capture the start of the playbook
             device_name = \
@@ -386,7 +430,7 @@ class JobHandler(object):
 
             # Run playbook in a separate process. This is needed since
             # ansible cannot be used in a greenlet based patched environment
-            self.run_playbook_process(playbook_info, percentage_completed)
+            playbook_output = self.run_playbook_process(playbook_info, percentage_completed)
 
             # create job log to capture completion of the playbook execution
             msg = MsgBundle.getMessage(MsgBundle.STOP_EXE_PB_MSG,
@@ -397,6 +441,7 @@ class JobHandler(object):
                                              self._fabric_fq_name,
                                              msg, JobStatus.IN_PROGRESS.value,
                                              device_name=device_name)
+            return playbook_output
         except JobException:
             raise
         except Exception as exp:
@@ -405,14 +450,6 @@ class JobHandler(object):
                                        exc_msg=repr(exp))
             raise JobException(msg, self._execution_id)
     # end run_playbook
-
-    def update_result_handler(self, result_handler):
-        if self._playbook_output:
-            result_handler.update_playbook_output(self._playbook_output)
-
-        if self.current_percentage:
-            result_handler.percentage_completed = self.current_percentage
-    # end update_result_handler
 
     def _extract_marked_json(self, marked_output):
         retval = {}

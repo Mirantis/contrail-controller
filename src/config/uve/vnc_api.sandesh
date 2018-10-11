@@ -128,6 +128,8 @@ struct VncApiStats {
     9: u64 response_size
     /** http status code for response e.g. 200, 404 etc. */
     10: string resp_code
+    /** Request identifier **/
+    11: string req_id
 }
 
 /**
@@ -193,7 +195,8 @@ struct PhysicalRouterJobExecution {
     /* Job start timestamp */
     4: i64                              job_start_ts;
     5: string                           prouter_state;
-    6: string                           job_status;
+    6: double                           percentage_completed;
+    7: string                           job_status;
     // Add additional items here as needed
 }
 

@@ -21,8 +21,6 @@ sys.setdefaultencoding('UTF8')
 import ConfigParser
 import functools
 import hashlib
-import logging
-import logging.config
 import signal
 import netaddr
 import os
@@ -50,7 +48,6 @@ from cfgm_common import is_uuid_like
 from cfgm_common import SG_NO_RULE_FQ_NAME
 
 from cfgm_common.uve.vnc_api.ttypes import VncApiLatencyStats, VncApiLatencyStatsLog
-logger = logging.getLogger(__name__)
 
 import time
 import requests
@@ -418,52 +415,56 @@ class VncApiServer(object):
             # update job manager execution status uve
             elapsed_time = time.time() - signal_var.get('start_time')
             status = "UNKNOWN"
-            if signal_var.get('fabric_name') is not "__DEFAULT__":
-                retry = max_retries
-                while retry:
-                    try:
-                        # read the job object log for a particular job to check if
-                        # it succeeded or not
-                        jobObjLog_payload = {
-                            'start_time': 'now-%ds' % (elapsed_time),
-                            'end_time': 'now',
-                            'select_fields': ['MessageTS', 'Messagetype', 'ObjectLog'],
-                            'table': 'ObjectJobExecutionTable',
-                            'where': [
-                                [
-                                    {
-                                        'name': 'ObjectId',
-                                        'value': '%s:SUCCESS' % signal_var.get('exec_id'),
-                                        'op': 1
-                                    }
-                                ]
+
+            retry = max_retries
+            while retry:
+                try:
+                    analytics_node_ip = random.choice(self._analytics_node_list)
+                    # read the job object log for a particular job to check if
+                    # it succeeded or not
+                    jobObjLog_payload = {
+                        'start_time': 'now-%ds' % (elapsed_time),
+                        'end_time': 'now',
+                        'select_fields': ['MessageTS', 'Messagetype', 'ObjectLog'],
+                        'table': 'ObjectJobExecutionTable',
+                        'where': [
+                            [
+                                {
+                                    'name': 'ObjectId',
+                                    'value': '%s:SUCCESS' % signal_var.get('exec_id'),
+                                    'op': 1
+                                }
                             ]
-                        }
+                        ]
+                    }
 
-                        url = "http://localhost:8081/analytics/query"
+                    url = "http://" + analytics_node_ip + \
+                          ":8081/analytics/query"
 
-                        resp = requests.post(url, json=jobObjLog_payload)
-                        if resp.status_code == 200:
-                            JobLog = resp.json().get('value')
-                            if not JobLog:
-                                status = 'FAILURE'
-                            else:
-                                status = 'SUCCESS'
+                    resp = requests.post(url, json=jobObjLog_payload)
+                    if resp.status_code == 200:
+                        JobLog = resp.json().get('value')
+                        if not JobLog:
+                            status = 'FAILURE'
                         else:
-                            self.config_log("POST request to query job object log "
-                                            "failed with error %s" %
-                                            resp.status_code,
-                                            level=SandeshLevel.SYS_ERR)
-                        break
-                    except (requests.ConnectionError, requests.ConnectTimeout,
-                            requests.HTTPError, requests.Timeout) as ex:
-                        retry-=1
-                        if retry == 0:
-                            self.config_log("POST request to query job object log "
-                                            "failed after %d retries with error "
-                                            "%s" % (max_retries, str(ex)),
-                                            level=SandeshLevel.SYS_ERR)
+                            status = 'SUCCESS'
+                    else:
+                        self.config_log("POST request to query job object log "
+                                        "failed with error %s" %
+                                        resp.status_code,
+                                        level=SandeshLevel.SYS_ERR)
+                    break
+                except (requests.ConnectionError, requests.ConnectTimeout,
+                        requests.HTTPError, requests.Timeout) as ex:
+                    retry-=1
+                    if retry == 0:
+                        self.config_log("POST request to query job object log "
+                                        "failed after %d retries with error "
+                                        "%s" % (max_retries, str(ex)),
+                                        level=SandeshLevel.SYS_ERR)
 
+            if signal_var.get('fabric_name') is not "__DEFAULT__" and not \
+                    signal_var.get('device_fqnames'):
                 #send uve irrespective of the job log query
                 # success/failure with job status
                 job_execution_data = FabricJobExecution(
@@ -473,10 +474,22 @@ class VncApiServer(object):
                 job_execution_uve = FabricJobUve(data=job_execution_data,
                                                  sandesh=self._sandesh)
                 job_execution_uve.send(sandesh=self._sandesh)
+            else:
+                for prouter_uve_name in signal_var.get('device_fqnames'):
+                    prouter_job_data = PhysicalRouterJobExecution(
+                        name=prouter_uve_name,
+                        job_status=status,
+                        percentage_completed=100
+                    )
+
+                    prouter_job_uve = PhysicalRouterJobUve(
+                        data=prouter_job_data, sandesh=self._sandesh)
+                    prouter_job_uve.send(sandesh=self._sandesh)
 
             retry = max_retries
             while retry:
                 try:
+                    analytics_node_ip = random.choice(self._analytics_node_list)
                     # read the last PRouter state for all Prouetrs
                     payload = {
                         'sort':1,
@@ -500,7 +513,9 @@ class VncApiServer(object):
                             ]
                         ]
                     }
-                    url = "http://localhost:8081/analytics/query"
+
+                    url = "http://" + analytics_node_ip + \
+                          ":8081/analytics/query"
 
                     resp = requests.post(url, json=payload)
                     if resp.status_code == 200:
@@ -546,19 +561,24 @@ class VncApiServer(object):
             #remove the pid entry of the processed job_mgr process
             del self._job_mgr_running_instances[str(pid[0])]
 
+            self._job_mgr_statitics['number_processess_running'] = len(
+                self._job_mgr_running_instances)
+
+            self.config_log("Job : %s finished. Current number of job_mgr "
+                            "processes running now %s " %
+                            (signal_var, self._job_mgr_statitics[
+                                'number_processess_running']))
+
         except OSError as process_error:
             self.config_log("Couldn retrieve the child process id. OS call "
                             "returned with error %s" % str(process_error),
                             level=SandeshLevel.SYS_ERR)
 
     def is_existing_job_for_fabric(self, fabric_job_uve_name):
-        existing_job = False
         for job_info in self._job_mgr_running_instances.values():
-            for fabric_info in job_info.values():
-                if fabric_job_uve_name in fabric_info:
-                    existing_job = True
-                    break
-        return existing_job
+            if fabric_job_uve_name == job_info.get('fabric_name'):
+                return True
+        return False
 
     def execute_job_http_post(self):
         ''' Payload of execute_job
@@ -589,112 +609,133 @@ class VncApiServer(object):
 
             self.config_log("Entered execute-job",
                             level=SandeshLevel.SYS_NOTICE)
-            request_params = get_request().json
-            msg = "Job Input %s " % json.dumps(request_params)
-            self.config_log(msg, level=SandeshLevel.SYS_NOTICE)
 
-            fabric_job_uve_name = ''
+            if self._job_mgr_statitics.get('number_processess_running') < \
+                    self._job_mgr_statitics.get('max_number_processes'):
 
-            # get the auth token
-            auth_token = get_request().get_header('X-Auth-Token')
-            request_params['auth_token'] = auth_token
+                request_params = get_request().json
+                msg = "Job Input %s " % json.dumps(request_params)
+                self.config_log(msg, level=SandeshLevel.SYS_NOTICE)
 
-            # pass the required config args to job manager
-            job_args = {'collectors': self._args.collectors,
-                        'fabric_ansible_conf_file':
-                            self._args.fabric_ansible_conf_file
-                        }
-            request_params['args'] = json.dumps(job_args)
+                fabric_job_uve_name = ''
+                device_fqnames = []
 
-            is_delete = request_params.get('input').get('is_delete')
+                # get the auth token
+                auth_token = get_request().get_header('X-Auth-Token')
+                request_params['auth_token'] = auth_token
+                request_params['api_server_host'] = self._config_node_list
+                request_params['analytics_server_list'] = self._analytics_node_list
 
-            device_list = self.validate_execute_job_input_params(
-                    request_params)
+                # pass the required config args to job manager
+                job_args = {'collectors': self._args.collectors,
+                            'fabric_ansible_conf_file':
+                                self._args.fabric_ansible_conf_file
+                            }
+                request_params['args'] = json.dumps(job_args)
 
-            if is_delete is None or is_delete == False:
-                # TODO - pass the job manager config file from api server config
-
-                # read the device object and pass the necessary data to the job
-                if device_list:
-                    self.read_device_data(device_list, request_params)
-                else:
-                    self.read_fabric_data(request_params)
-
-                fabric_job_name = request_params.get('job_template_fq_name')
-                fabric_job_name.insert(0, request_params.get('fabric_fq_name'))
-                fabric_job_uve_name = ':'.join(map(str, fabric_job_name))
                 # generate the job execution id
                 execution_id = str(int(round(time.time() * 1000))) + '_' + \
                            str(uuid.uuid4())
                 request_params['job_execution_id'] = execution_id
 
-                existing_job = self.is_existing_job_for_fabric(fabric_job_uve_name)
+                is_delete = request_params.get('input').get('is_delete')
 
-                if self.job_concurrency is "fabric" and existing_job:
-                    msg = "Another job for the same fabric is in progress. " \
-                          "Please wait for the job to finish"
-                    raise cfgm_common.exceptions.HttpError(412, msg)
+                device_list = self.validate_execute_job_input_params(
+                        request_params)
 
-                # create job manager fabric execution status uve
-                if request_params.get('fabric_fq_name') is not "__DEFAULT__":
-                    job_execution_data = FabricJobExecution(
-                        name=fabric_job_uve_name,
-                        execution_id=request_params.get('job_execution_id'),
-                        job_start_ts=int(round(time.time() * 1000)),
-                        job_status="STARTING",
-                        percentage_completed=0.0
-                    )
+                if is_delete is None or is_delete == False:
+                    # TODO - pass the job manager config file from api server config
 
-                    job_execution_uve = FabricJobUve(data=job_execution_data,
-                                                     sandesh=self._sandesh)
-                    job_execution_uve.send(sandesh=self._sandesh)
+                    # read the device object and pass the necessary data to the job
+                    if device_list:
+                        self.read_device_data(device_list, request_params)
+                    else:
+                        self.read_fabric_data(request_params)
 
-                if device_list:
-                    for device_id in device_list:
-                        device_fqname = request_params.get(
-                            'device_json').get(device_id).get('device_fqname')
-                        device_fqname = ':'.join(map(str, device_fqname))
-                        prouter_uve_name = device_fqname + ":" + \
-                            fabric_job_uve_name
+                    fabric_job_name = request_params.get('job_template_fq_name')
+                    fabric_job_name.insert(0, request_params.get('fabric_fq_name'))
+                    fabric_job_uve_name = ':'.join(map(str, fabric_job_name))
 
-                        prouter_job_data = PhysicalRouterJobExecution(
-                            name=prouter_uve_name,
+                    existing_job = self.is_existing_job_for_fabric(fabric_job_uve_name)
+
+                    if self.job_concurrency is "fabric" and existing_job:
+                        msg = "Another job for the same fabric is in progress. " \
+                              "Please wait for the job to finish"
+                        raise cfgm_common.exceptions.HttpError(412, msg)
+
+                    # create job manager fabric execution status uve
+                    if request_params.get('fabric_fq_name') is not "__DEFAULT__" \
+                            and not device_list:
+                        job_execution_data = FabricJobExecution(
+                            name=fabric_job_uve_name,
                             execution_id=request_params.get('job_execution_id'),
-                            job_start_ts=int(round(time.time() * 1000))
+                            job_start_ts=int(round(time.time() * 1000)),
+                            job_status="STARTING",
+                            percentage_completed=0.0
                         )
+                        job_execution_uve = FabricJobUve(data=job_execution_data,
+                                                         sandesh=self._sandesh)
+                        job_execution_uve.send(sandesh=self._sandesh)
 
-                        prouter_job_uve = PhysicalRouterJobUve(
-                            data=prouter_job_data, sandesh=self._sandesh)
-                        prouter_job_uve.send(sandesh=self._sandesh)
+                    if device_list:
+                        for device_id in device_list:
+                            device_fqname = request_params.get(
+                                'device_json').get(device_id).get('device_fqname')
+                            device_fqname = ':'.join(map(str, device_fqname))
+                            prouter_uve_name = device_fqname + ":" + \
+                                fabric_job_uve_name
 
-            start_time = time.time()
-            signal_var = {
-                'fabric_name': fabric_job_uve_name ,
-                'start_time': start_time ,
-                'exec_id': request_params.get('job_execution_id')
-            }
+                            prouter_job_data = PhysicalRouterJobExecution(
+                                name=prouter_uve_name,
+                                execution_id=request_params.get('job_execution_id'),
+                                job_start_ts=int(round(time.time() * 1000)),
+                                job_status="STARTING",
+                                percentage_completed=0.0
+                            )
 
-            # handle process exit signal
-            signal.signal(signal.SIGCHLD,  self.job_mgr_signal_handler)
+                            prouter_job_uve = PhysicalRouterJobUve(
+                                data=prouter_job_data, sandesh=self._sandesh)
+                            prouter_job_uve.send(sandesh=self._sandesh)
+                            device_fqnames.append(prouter_uve_name)
 
-            # create job manager subprocess
-            job_mgr_path = os.path.dirname(__file__) + "/../job_manager/job_mgr.py"
-            job_process = subprocess.Popen(["python", job_mgr_path, "-i",
-                                            json.dumps(request_params)],
-                                           cwd="/", close_fds=True)
+                start_time = time.time()
+                signal_var = {
+                    'fabric_name': fabric_job_uve_name ,
+                    'start_time': start_time ,
+                    'exec_id': request_params.get('job_execution_id'),
+                    'device_fqnames': device_fqnames
+                }
 
-            self._job_mgr_running_instances[str(job_process.pid)] = signal_var
+                # handle process exit signal
+                signal.signal(signal.SIGCHLD,  self.job_mgr_signal_handler)
 
-            self.config_log("Created job manager process. Execution id: %s" %
-                            execution_id,
-                            level=SandeshLevel.SYS_NOTICE)
-            return {'job_execution_id': str(execution_id),
-                    'job_manager_process_id': str(job_process.pid)}
+                # create job manager subprocess
+                job_mgr_path = os.path.dirname(__file__) + "/../job_manager/job_mgr.py"
+                job_process = subprocess.Popen(["python", job_mgr_path, "-i",
+                                                json.dumps(request_params)],
+                                               cwd="/", close_fds=True)
+
+                self._job_mgr_running_instances[str(job_process.pid)] = signal_var
+
+                self._job_mgr_statitics['number_processess_running'] = len(
+                    self._job_mgr_running_instances)
+
+                self.config_log("Created job manager process. Execution id: %s" %
+                                execution_id,
+                                level=SandeshLevel.SYS_NOTICE)
+
+                self.config_log("Current number of job_mgr processes running "
+                                "%s" % self._job_mgr_statitics[
+                    'number_processess_running'])
+
+                return {'job_execution_id': str(execution_id),
+                        'job_manager_process_id': str(job_process.pid)}
+            else:
+                err_msg = "Server is busy, cannot process the request, " \
+                          "try again later"
+                raise cfgm_common.exceptions.HttpError(503, err_msg)
         except cfgm_common.exceptions.HttpError as e:
             raise
-        except Exception as e:
-            err_msg = "Error while executing job request: %s" % repr(e)
-            raise cfgm_common.exceptions.HttpError(500, err_msg)
 
     def read_fabric_data(self, request_params):
         if request_params.get('input') is None:
@@ -973,6 +1014,12 @@ class VncApiServer(object):
         if not ok:
             result = 'Bad reference in create: ' + result
             raise cfgm_common.exceptions.HttpError(400, result)
+
+        # no ref to a pending deleted resource
+        ok, result = r_class.no_pending_deleted_resource_in_refs(obj_dict)
+        if not ok:
+            code, msg = result
+            raise cfgm_common.exceptions.HttpError(code, msg)
 
         # Can abort resource creation and retrun 202 status code
         get_context().set_state('PENDING_DBE_CREATE')
@@ -1952,10 +1999,6 @@ class VncApiServer(object):
         else:
             self.aaa_mode = "cloud-admin"
 
-        # set python logging level from logging_level cmdline arg
-        if not self._args.logging_conf:
-            logging.basicConfig(level = getattr(logging, self._args.logging_level))
-
         self._base_url = "http://%s:%s" % (self._args.listen_ip_addr,
                                            self._args.listen_port)
 
@@ -2122,6 +2165,27 @@ class VncApiServer(object):
                               "Internal error : Failed to read resource count"
                     self.config_log(err_msg, level=SandeshLevel.SYS_ERR)
 
+        self._config_node_list = []
+        (ok, cfg_node_list, _) = self._db_conn.dbe_list('config_node',
+                                                    field_names=[
+                                                        'config_node_ip_address'])
+        if not ok:
+            (code, err_msg) = cfg_node_list
+            raise cfgm_common.exceptions.HttpError(code, err_msg)
+        for node in cfg_node_list or []:
+            self._config_node_list.append(node.get('config_node_ip_address'))
+
+        self._analytics_node_list = []
+        (ok, alytics_node_list, _) = self._db_conn.dbe_list('analytics_node',
+                                                    field_names=[
+                                                        'analytics_node_ip_address'])
+        if not ok:
+            (code, err_msg) = alytics_node_list
+            raise cfgm_common.exceptions.HttpError(code, err_msg)
+        for node in alytics_node_list or []:
+            self._analytics_node_list.append(node.get('analytics_node_ip_address'))
+
+
         # API/Permissions check
         # after db init (uses db_conn)
         self._rbac = vnc_rbac.VncRbac(self, self._db_conn)
@@ -2184,6 +2248,9 @@ class VncApiServer(object):
         # map of running job instances. Key is the pid and value is job
         # instance info
         self._job_mgr_running_instances = {}
+        #number of processes spawned at any time
+        self._job_mgr_statitics = {'max_number_processes': self._args.max_job_mgr_processes,
+                                   'number_processess_running': 0}
     # end __init__
 
     @property
@@ -3152,7 +3219,6 @@ class VncApiServer(object):
                                          --region_name RegionOne
                                          --log_local
                                          --log_level SYS_DEBUG
-                                         --logging_level DEBUG
                                          --logging_conf <logger-conf-file>
                                          --log_category test
                                          --log_file <stdout>
@@ -4231,6 +4297,12 @@ class VncApiServer(object):
                 self.config_object_error(
                     obj_uuid, fq_name_str, obj_type, api_name, msg)
                 raise cfgm_common.exceptions.HttpError(code, msg)
+
+        # no ref to a pending deleted resource
+        ok, result = r_class.no_pending_deleted_resource_in_refs(req_obj_dict)
+        if not ok:
+            code, msg = result
+            raise cfgm_common.exceptions.HttpError(code, msg)
 
         # Validate perms on references
         if req_obj_dict is not None:
