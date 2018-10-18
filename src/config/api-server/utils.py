@@ -59,7 +59,6 @@ def parse_args(args_str):
         'trace_file': '/var/log/contrail/vnc_openstack.err',
         'use_syslog': False,
         'syslog_facility': Sandesh._DEFAULT_SYSLOG_FACILITY,
-        'logging_level': 'WARN',
         'logging_conf': '',
         'logger_class': None,
         'multi_tenancy': None,
