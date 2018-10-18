@@ -30,8 +30,13 @@ class ServiceLbManager(VncCommon):
             return
 
         vmi_ids = lb.virtual_machine_interfaces
-        self._vnc_lib.loadbalancer_delete(id=service_id)
-        if vmi_ids is None:
+        try:
+            self._vnc_lib.loadbalancer_delete(id=service_id)
+        except NoIdError as e:
+            self.logger.warning(repr(e))
+
+        # Check empty list
+        if not vmi_ids:
             return None
         self._delete_virtual_interface(vmi_ids)
 
