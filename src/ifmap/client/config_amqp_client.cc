@@ -134,7 +134,7 @@ string ConfigAmqpClient::FormAmqpUri() const {
                         rabbitmq_password() + "@" + rabbitmq_ip() + ":" +
                         rabbitmq_port());
     if (!rabbitmq_vhost().empty()) {
-        if (rabbitmq_vhost().compare("/") != 0) {
+        if (rabbitmq_vhost().compare(0, 1, "/", 1) != 0) {
             uri += "/" + rabbitmq_vhost();
         }
     }
