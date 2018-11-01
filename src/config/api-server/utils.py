@@ -222,10 +222,6 @@ def parse_args(args_str):
         "--log_level",
         help="Severity level for local logging of sandesh messages")
     parser.add_argument(
-        "--logging_level",
-        help=("Log level for python logging: DEBUG, INFO, WARN, ERROR default: %s"
-              % defaults['logging_level']))
-    parser.add_argument(
         "--logging_conf",
         help=("Optional logging configuration file, default: None"))
     parser.add_argument(
