@@ -1,0 +1,15 @@
+[Unit]
+Description= Supervisor for contrail vrouter service
+After=syslog.target network.target
+
+[Service]
+Restart=always
+ExecStart=/usr/bin/supervisord -n -c /etc/contrail/supervisord_vrouter.conf
+LimitCORE=infinity
+LimitNOFILE=4096
+LimitSTACK=infinity
+LimitDATA=infinity
+LimitAS=infinity
+
+[Install]
+WantedBy=multi-user.target
