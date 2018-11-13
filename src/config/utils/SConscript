@@ -15,6 +15,7 @@ utils_scripts = [
   'provision.py',
   'service-policy.py',
   'chmod.py',
+  'chmod2.py',
   'contrail',
   'contrail-version',
   'contrail-status.py',
@@ -47,7 +48,10 @@ utils_scripts = [
   'provision_config_node.py',
   'discovery_cli.py',
   'provision_user_defined_log_statistics.py',
+  'service_appliance.py',
+  'service_appliance_set.py',
   'contrail-diff-docs.py',
+  'rbacutil.py',
 ]
 
 for utils in utils_scripts:

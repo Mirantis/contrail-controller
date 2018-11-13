@@ -1857,7 +1857,7 @@ class VncApiServer(object):
                 'token_info': None,
                 'is_cloud_admin_role': False,
                 'is_global_read_only_role': False,
-                'permissions': PERMS_RWX
+                'permissions': 'RWX'
             }
             return result
 

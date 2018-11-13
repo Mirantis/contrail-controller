@@ -61,7 +61,10 @@ class DatabaseEventManager(EventManager):
         self.cassandra_repair_interval = cassandra_repair_interval
         self.cassandra_repair_logdir = cassandra_repair_logdir
         self.cassandra_mgr = CassandraManager(cassandra_repair_logdir)
-        self.supervisor_serverurl = "unix:///var/run/supervisord_database.sock"
+        if os.path.exists('/tmp/supervisord_database.sock'):
+            self.supervisor_serverurl = "unix:///tmp/supervisord_database.sock"
+        else:
+            self.supervisor_serverurl = "unix:///var/run/supervisord_database.sock"
         self.add_current_process()
         node_type = Module2NodeType[self.module]
         node_type_name = NodeTypeNames[node_type]
@@ -93,7 +96,7 @@ class DatabaseEventManager(EventManager):
 
     def _get_cassandra_config_option(self, config):
         (linux_dist, x, y) = platform.linux_distribution()
-        if (linux_dist == 'Ubuntu'):
+        if (linux_dist in ['Ubuntu', 'debian']):
             yamlstream = open("/etc/cassandra/cassandra.yaml", 'r')
         else:
             yamlstream = open("/etc/cassandra/conf/cassandra.yaml", 'r')
