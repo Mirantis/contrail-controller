@@ -1,8 +1,10 @@
 [Unit]
+StartLimitInterval=0
 Description=Contrail analytics nodemanager
 After=network.target
 
 [Service]
+RestartSec=3s
 Type=simple
 ExecStart=/usr/bin/contrail-nodemgr --nodetype=contrail-analytics
 PIDFile=/var/run/contrail/contrail-analytics-nodemgr.pid

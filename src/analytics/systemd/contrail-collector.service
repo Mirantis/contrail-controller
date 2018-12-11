@@ -1,8 +1,10 @@
 [Unit]
+StartLimitInterval=0
 Description="contrail Collector"
 After=network.target
 
 [Service]
+RestartSec=3s
 Type=simple
 ExecStart=/usr/bin/contrail-collector
 PIDFile=/var/run/contrail/contrail-collector.pid
