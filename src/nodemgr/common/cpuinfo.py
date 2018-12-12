@@ -31,9 +31,10 @@ class MemCpuUsageData(object):
     #end get_num_socket
 
     def get_num_cpu(self):
-        cmd = 'lscpu | grep "^CPU(s):" | awk \'{print $2}\''
-        proc = Popen(cmd, shell=True, stdout=PIPE)
-        return int(proc.communicate()[0])
+        if hasattr(psutil, 'NUM_CPUS'):
+            return psutil.NUM_CPUS
+        else:
+            return psutil.cpu_count()
     #end get_num_cpu
 
     def get_num_core_per_socket(self):
