@@ -875,7 +875,7 @@ class EventManager(object):
         node_status_uve.send()
 
         # PROD-24894
-        if self.type_info._object_table == 'ObjectConfigNode';
+        if self.type_info._object_table == 'ObjectConfigNode':
             database_table = 'ObjectDatabaseInfo'
             node_status_db_uve = NodeStatusUVE(table=database_table,
                                             data=node_status)
