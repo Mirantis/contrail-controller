@@ -1,9 +1,11 @@
 [Unit]
+StartLimitInterval=0
 Description=Contrail vrouter nodemanager
 BindsTo=
 After=network.target
 
 [Service]
+RestartSec=3s
 Type=simple
 ExecStart=/usr/bin/contrail-nodemgr --nodetype=contrail-vrouter
 PIDFile=/var/run/contrail/contrail-vrouter-nodemgr.pid
