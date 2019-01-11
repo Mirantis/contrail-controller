@@ -45,6 +45,7 @@
 #include <oper/agent_sandesh.h>
 #include <oper/vrouter.h>
 #include <oper/bgp_as_service.h>
+#include <oper/bgp_router.h>
 #include <oper/agent_route_walker.h>
 #include <nexthop_server/nexthop_manager.h>
 #include <oper/forwarding_class.h>
@@ -81,6 +82,8 @@ void OperDB::CreateDBTables(DB *db) {
                         boost::bind(&CryptTunnelTable::CreateTable,
                                     agent_, _1, _2));
     DB::RegisterFactory("uc.route.0",
+                        &InetUnicastAgentRouteTable::CreateTable);
+    DB::RegisterFactory("uc.route.3",
                         &InetUnicastAgentRouteTable::CreateTable);
     DB::RegisterFactory("mc.route.0",
                         &Inet4MulticastAgentRouteTable::CreateTable);
@@ -275,7 +278,10 @@ void OperDB::CreateDBTables(DB *db) {
                                              "db.physical_device_vn.0");
     agent_->set_physical_device_vn_table(dev_vn_table);
     profile_.reset(new AgentProfile(agent_, true));
+
     bgp_as_a_service_ = std::auto_ptr<BgpAsAService>(new BgpAsAService(agent_));
+    bgp_router_config_ =
+        std::auto_ptr<BgpRouterConfig> (new BgpRouterConfig(agent_));
 
     vrouter_ = std::auto_ptr<VRouter> (new VRouter(agent_));
     global_qos_config_ =
@@ -363,6 +369,8 @@ void OperDB::Shutdown() {
     }
     dependency_manager_->Terminate();
     global_vrouter_.reset();
+
+    bgp_router_config_.reset();
 
     global_qos_config_.reset();
     global_system_config_.reset();

@@ -21,7 +21,6 @@ from cfgm_common.exceptions import (
     RefsExistError,
     NoIdError
 )
-from vnc_api.vnc_api import VncApi
 from vnc_api.gen.resource_client import (
     Fabric,
     FabricNamespace,
@@ -125,6 +124,7 @@ class NetworkType(object):
     MGMT_NETWORK = 'management'
     LOOPBACK_NETWORK = 'loopback'
     FABRIC_NETWORK = 'ip-fabric'
+    PNF_SERVICECHAIN_NETWORK = 'pnf-servicechain'
 
     def __init__(self):
         pass
@@ -595,7 +595,7 @@ class FilterModule(object):
                 fabric_subnets,
                 'label=fabric-peer-ip'
             )
-            peer_subnets = self._carve_out_peer_subnets(fabric_subnets)
+            peer_subnets = self._carve_out_subnets(fabric_subnets, 30)
             self._add_fabric_vn(
                 vnc_api,
                 fabric_obj,
@@ -604,7 +604,30 @@ class FilterModule(object):
                 True
             )
 
-        # ANS pool for underlay eBGP
+        # PNF Servicechain network
+        if fabric_info.get('pnf_servicechain_subnets'):
+            pnf_servicechain_subnets = [
+                {
+                    'cidr': subnet
+                } for subnet in fabric_info.get('pnf_servicechain_subnets')
+            ]
+            self._add_cidr_namespace(
+                vnc_api,
+                fabric_obj,
+                'pnf-servicechain-subnets',
+                pnf_servicechain_subnets,
+                'label=fabric-pnf-servicechain-ip'
+            )
+            pnf_sc_subnets = self._carve_out_subnets(pnf_servicechain_subnets, 29)
+            self._add_fabric_vn(
+                vnc_api,
+                fabric_obj,
+                NetworkType.PNF_SERVICECHAIN_NETWORK,
+                pnf_sc_subnets,
+                True
+            )
+
+        # ASN pool for underlay eBGP
         if fabric_info.get('fabric_asn_pool'):
             self._add_asn_range_namespace(
                 vnc_api,
@@ -638,13 +661,15 @@ class FilterModule(object):
     # end onboard_fabric
 
     @staticmethod
-    def _carve_out_peer_subnets(subnets):
+    def _carve_out_subnets(subnets, cidr):
         """
         :param subnets: type=list<Dictionary>
+        :param cidr: type=int
             example:
             [
                 { 'cidr': '192.168.10.1/24', 'gateway': '192.168.10.1 }
             ]
+            cidr = 30
         :return: list<Dictionary>
             example:
             [
@@ -653,11 +678,11 @@ class FilterModule(object):
         """
         carved_subnets = []
         for subnet in subnets:
-            slash_30_subnets = IPNetwork(subnet.get('cidr')).subnet(30)
-            for slash_30_sn in slash_30_subnets:
-                carved_subnets.append({'cidr': str(slash_30_sn)})
+            slash_x_subnets = IPNetwork(subnet.get('cidr')).subnet(cidr)
+            for slash_x_sn in slash_x_subnets:
+                carved_subnets.append({'cidr': str(slash_x_sn)})
         return carved_subnets
-    # end _carve_out_peer_subnets
+    # end _carve_out_subnets
 
     @staticmethod
     def _create_fabric(vnc_api, fabric_info, ztp):
@@ -1022,6 +1047,9 @@ class FilterModule(object):
             )
             self._delete_fabric_network(
                 vnc_api, fabric_name, NetworkType.FABRIC_NETWORK
+            )
+            self._delete_fabric_network(
+                vnc_api, fabric_name, NetworkType.PNF_SERVICECHAIN_NETWORK
             )
 
             return {
@@ -1446,9 +1474,8 @@ class FilterModule(object):
                         fq_name=node_profile_fq_name,
                         fields=['node_profile_roles']
                     )
-                    device_roles['supported_roles'] = \
-                        node_profile_obj.get_node_profile_roles().\
-                        get_role_mappings()
+                    device_roles['supported_roles'] = node_profile_obj\
+                        .get_node_profile_roles().get_role_mappings()
 
             # validate role assignment against device's supported roles
             self._validate_role_assignments(
@@ -1815,12 +1842,17 @@ class FilterModule(object):
                 vnc_api.bgp_router_create(bgp_router_obj)
 
             device_obj.add_bgp_router(bgp_router_obj)
+        else:
+            self._logger.warn(
+                "Loopback interfaces are not found on device '%s', therefore"
+                "not creating the bgp router object" % device_obj.name
+            )
         # end if
         return bgp_router_obj
     # end _add_bgp_router
 
-    def _add_logical_router(self, vnc_api, device_obj, device_roles,
-                            fabric_name):
+    def _add_logical_router(
+            self, vnc_api, device_obj, device_roles, fabric_name):
         """
         Add logical-router object for this device if CRB gateway role
         :param vnc_api: <vnc_api.VncApi>

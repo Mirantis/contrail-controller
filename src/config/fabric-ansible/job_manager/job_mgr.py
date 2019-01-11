@@ -69,6 +69,8 @@ class JobManager(object):
 
         self.fabric_fq_name = job_input_json.get('fabric_fq_name')
 
+        self.multi_device_count = self.job_data.get('multi_device_count')
+
     def start_job(self):
         # spawn job greenlets
         job_handler = JobHandler(self._logger, self._vnc_api,
@@ -95,7 +97,8 @@ class JobManager(object):
         job_worker_pool = Pool(self.max_job_task)
         job_percent_per_task = \
             self.job_log_utils.calculate_job_percentage(
-                len(self.device_json), buffer_task_percent=False,
+                self.multi_device_count or len(self.device_json),
+                buffer_task_percent=False,
                 total_percent=self.job_percent)[0]
         for device_id in self.device_json:
             if device_id in result_handler.failed_device_jobs:
@@ -245,13 +248,22 @@ class WFManager(object):
                             len(playbook_list), buffer_task_percent=True,
                             total_percent=100)[0]  # using equal weightage
 
-                job_mgr = JobManager(self._logger, self._vnc_api,
-                                     self.job_input, self.job_log_utils,
-                                     job_template,
-                                     self.result_handler, self.job_utils, i,
-                                     job_percent)
+                retry_devices = None
+                while True:
+                    job_mgr = JobManager(self._logger, self._vnc_api,
+                                         self.job_input, self.job_log_utils,
+                                         job_template,
+                                         self.result_handler, self.job_utils, i,
+                                         job_percent)
+                    job_mgr.start_job()
 
-                job_mgr.start_job()
+                    # retry the playbook execution if retry_devices is added to
+                    # the playbook output
+                    job_status = self.result_handler.job_result_status
+                    retry_devices = self.result_handler.get_retry_devices()
+                    if job_status == JobStatus.FAILURE or not retry_devices:
+                        break
+                    self.job_input['device_json'] = retry_devices
 
                 # stop the workflow if playbook failed
                 if self.result_handler.job_result_status == JobStatus.FAILURE:
@@ -268,7 +280,7 @@ class WFManager(object):
                             "Stop the workflow on the failed Playbook.")
                         break
 
-                    else:
+                    elif not retry_devices:
                         # it is a multi device playbook but one of the device jobs
                         # have failed. This means we should still declare
                         # the operation as success. We declare workflow as

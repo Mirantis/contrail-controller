@@ -43,6 +43,7 @@
 #include <pkt/flow_proto.h>
 #include <pkt/pkt_types.h>
 #include <pkt/pkt_sandesh_flow.h>
+#include <pkt/flow_mgmt/flow_entry_info.h>
 #include <pkt/flow_mgmt.h>
 #include <pkt/flow_event.h>
 #include <pkt/flow_entry.h>
@@ -283,11 +284,6 @@ void FlowData::Reset() {
     flow_dest_vrf = VrfEntry::kInvalidIndex;
     match_p.Reset();
     vn_entry.reset(NULL);
-    const VmInterface *vm_intf =
-        dynamic_cast<const VmInterface *>(intf_entry.get());
-    if (vm_intf) {
-        vm_intf->update_flow_count(-1);
-    }
     intf_entry.reset(NULL);
     in_vm_entry.Reset(true);
     out_vm_entry.Reset(true);
@@ -452,6 +448,13 @@ void FlowEntry::Reset() {
     assert(ksync_entry_ == NULL);
     uuid_ = flow_table_->rand_gen();
     egress_uuid_ = flow_table_->rand_gen();
+    if (is_flags_set(FlowEntry::IngressDir)) {
+        const VmInterface *vm_intf =
+            dynamic_cast<const VmInterface *>(intf_entry());
+        if (vm_intf) {
+            vm_intf->update_flow_count(-2);
+        }
+    }
     data_.Reset();
     l3_flow_ = true;
     gen_id_ = 0;
@@ -635,11 +638,6 @@ bool FlowEntry::InitFlowCmn(const PktFlowInfo *info, const PktControlInfo *ctrl,
     data_.out_vm_entry.SetVm(rev_ctrl->vm_);
     l3_flow_ = info->l3_flow;
     data_.acl_assigned_vrf_index_ = VrfEntry::kInvalidIndex;
-    const VmInterface *vm_intf =
-        dynamic_cast<const VmInterface *>(intf_entry());
-    if (vm_intf) {
-        vm_intf->update_flow_count(1);
-    }
     return true;
 }
 
@@ -722,6 +720,14 @@ void FlowEntry::InitFwdFlow(const PktFlowInfo *info, const PktInfo *pkt,
 
     data_.smac = pkt->smac;
     data_.dmac = pkt->dmac;
+
+    if (is_flags_set(FlowEntry::IngressDir)) {
+        const VmInterface *vm_intf =
+            dynamic_cast<const VmInterface *>(intf_entry());
+        if (vm_intf) {
+            vm_intf->update_flow_count(2);
+        }
+    }
 }
 
 void FlowEntry::InitRevFlow(const PktFlowInfo *info, const PktInfo *pkt,
@@ -802,6 +808,14 @@ void FlowEntry::InitRevFlow(const PktFlowInfo *info, const PktInfo *pkt,
 
     data_.smac = pkt->dmac;
     data_.dmac = pkt->smac;
+
+    if (is_flags_set(FlowEntry::IngressDir)) {
+        const VmInterface *vm_intf =
+            dynamic_cast<const VmInterface *>(intf_entry());
+        if (vm_intf) {
+            vm_intf->update_flow_count(2);
+        }
+    }
 }
 
 void FlowEntry::InitAuditFlow(uint32_t flow_idx, uint8_t gen_id) {
@@ -2262,14 +2276,14 @@ void FlowEntry::SessionMatch(SessionPolicy *sp, SessionPolicy *rsp,
     //     and sp->m_out_acl_l will be populated. Pick the
     //     UUID specified by acl_info for flow's SG rule UUID
     // For TCP-ACK flows
-    //     ALLOW if both ((policy.action && out_action) &&
+    //     ALLOW if either ((policy.action && out_action) || 
     //                      (policy.reverse_action & policy.reverse_out_action))
     //                      ALLOW
     //     For flow's SG rule UUID use the following rules
     //     --If both acl_info and rev_acl_info has drop set, pick the
     //       UUID from acl_info.
-    //     --If either of acl_info or rev_acl_info have drop
-    //       set, pick the UUID from the one which has drop set.
+    //     --If either of acl_info or rev_acl_info does not have drop
+    //       set, pick the UUID from the one which does not have drop set.
     //     --If both of them does not have drop set, pick it up from
     //       acl_info
     //
@@ -2277,20 +2291,19 @@ void FlowEntry::SessionMatch(SessionPolicy *sp, SessionPolicy *rsp,
         sp->action_summary =
             sp->action | sp->out_action | sp->reverse_action | sp->reverse_out_action;
         SetAclInfo(sp, rsp, acl_info, out_acl_info, false, is_sg);
-    } else if (ShouldDrop(sp->action | sp->out_action) ||
+    } else if (ShouldDrop(sp->action | sp->out_action) &&
                ShouldDrop(sp->reverse_action | sp->reverse_out_action)) {
-            //If either ingress ACL or egress ACL of VMI denies the
-            //packet, then pick ingress ACE uuid to send to UVE if ingress ACL is deny,
-            //else pick the other.
+            //If both ingress ACL and egress ACL of VMI denies the
+            //packet, then pick ingress ACE uuid to send to UVE
             sp->action_summary = (1 << TrafficAction::DENY);
-        if (ShouldDrop(sp->action | sp->out_action)) {
             SetAclInfo(sp, rsp, acl_info, out_acl_info, false, is_sg);
-        } else if (ShouldDrop(sp->reverse_action | sp->reverse_out_action)) {
-            SetAclInfo(sp, rsp, rev_out_acl_info, rev_acl_info, true, is_sg);
-        }
     } else {
         sp->action_summary = (1 << TrafficAction::PASS);
-        SetAclInfo(sp, rsp, acl_info, out_acl_info, false, is_sg);
+        if (!ShouldDrop(sp->action | sp->out_action)) {
+            SetAclInfo(sp, rsp, acl_info, out_acl_info, false, is_sg);
+        } else if (!ShouldDrop(sp->reverse_action | sp->reverse_out_action)) {
+            SetAclInfo(sp, rsp, rev_out_acl_info, rev_acl_info, true, is_sg);
+        }
     }
 }
 
@@ -3347,6 +3360,10 @@ const std::string FlowEntry::fw_policy_name_uuid() const {
     }
     return data_.match_p.aps_policy.acl_name_ + ":" +
         fw_policy_uuid();
+}
+
+void FlowEntry::set_flow_mgmt_info(FlowEntryInfo *info) {
+    flow_mgmt_info_.reset(info);
 }
 
 TcpPort::~TcpPort() {

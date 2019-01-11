@@ -5,24 +5,21 @@
 from gevent import monkey
 monkey.patch_all()
 
-from nodemgr.common.event_manager import EventManager, EventManagerTypeInfo
-from nodemgr.vrouter_nodemgr.process_stat import VrouterProcessStat
-from pysandesh.sandesh_base import sandesh_global
 from sandesh_common.vns.ttypes import Module
 from loadbalancer_stats import LoadbalancerStatsUVE
+
+from nodemgr.common.event_manager import EventManager, EventManagerTypeInfo
+from nodemgr.vrouter_nodemgr.process_stat import VrouterProcessStat
 
 
 class VrouterEventManager(EventManager):
     def __init__(self, config, unit_names):
         type_info = EventManagerTypeInfo(
-<<<<<<< HEAD
-            package_name = 'contrail-vrouter-agent',
-            module_type = Module.COMPUTE_NODE_MGR,
-            object_table = 'ObjectVRouter',
-            supervisor_serverurl = supervisor_serverurl,
-            sandesh_packages = ['vrouter.loadbalancer'])
-        super(VrouterEventManager, self).__init__(config, type_info, rule_file,
-                sandesh_global, unit_names, update_process_list=True)
+            module_type=Module.COMPUTE_NODE_MGR,
+            object_table='ObjectVRouter',
+            sandesh_packages=['vrouter.loadbalancer'])
+        super(VrouterEventManager, self).__init__(config, type_info,
+                unit_names, update_process_list=True)
         self.host_ip = config.hostip
         self.lb_stats = LoadbalancerStatsUVE(self.logger, self.host_ip)
 
