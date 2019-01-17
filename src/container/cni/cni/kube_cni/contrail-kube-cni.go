@@ -8,37 +8,101 @@
 package main
 
 import (
+	"bytes"
+	"errors"
+	"fmt"
+	"io/ioutil"
+	"os/exec"
+	"strings"
+
 	"../contrail"
 	log "../logging"
-	"context"
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/version"
-	"github.com/docker/docker/client"
-	"os"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
-// Use "docker inspect" equivalent API to get UUID and Name for container
+func BytesToStrings(data []byte) []string {
+	var out []string
+	for _, part := range bytes.Split(data, []byte{0}) {
+		out = append(out, string(part))
+	}
+	return out
+}
+
+func getKubeConfigPath() (string, error) {
+
+	out, err := exec.Command("pgrep", "-f", "kubelet").Output()
+	if err != nil {
+		return "", err
+	}
+	processID := strings.TrimSpace(string(out))
+
+	cmdline, err := ioutil.ReadFile(fmt.Sprintf("/proc/%s/cmdline", processID))
+	if err != nil {
+		return "", err
+	}
+	args := BytesToStrings(cmdline)
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--kubeconfig=") {
+			return arg[13:], nil
+		}
+	}
+	return "", nil
+}
+
+func getPodUidAndNodeNameFromK8sAPI(podName string, podNs string) (string, string, error) {
+
+	kubeconfig, err := getKubeConfigPath()
+	if err != nil {
+		log.Errorf("ERROR in getting kubeconfig path: %s", err)
+		return "", "", err
+	}
+
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	if err != nil {
+		log.Errorf("BuildConfigFromFlags: %s", err)
+		return "", "", err
+	}
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		log.Errorf("NewForConfig: %s", err)
+		return "", "", err
+	}
+
+	pod, err := clientset.CoreV1().Pods(podNs).Get(podName, metav1.GetOptions{})
+	if err != nil {
+		log.Errorf("clientset.CoreV1.Pods.Get for %s: %s", podName, err)
+		return "", "", err
+	}
+
+	return string(pod.UID), pod.Spec.NodeName, nil
+}
+
+// Use K8s client to get POD_container uuid and nodename from K8s API
 func getPodInfo(skelArgs *skel.CmdArgs) (string, string, error) {
-	os.Setenv("DOCKER_API_VERSION", "1.22")
-	cli, err := client.NewEnvClient()
-	if err != nil {
-		log.Errorf("Error creating docker client. %+v", err)
-		return "", "", err
+	var podName, podNs string
+	args := strings.Split(skelArgs.Args, ";")
+	for _, arg := range args {
+		atr := strings.Split(arg, "=")
+		if atr[0] == "K8S_POD_NAME" {
+			podName = atr[1]
+		}
+		if atr[0] == "K8S_POD_NAMESPACE" {
+			podNs = atr[1]
+		}
+
+	}
+	if len(podName) == 0 {
+		return "", "", errors.New("Cannot get POD name from Args")
+	}
+	if len(podNs) == 0 {
+		return "", "", errors.New("Cannot get POD namespace from Args")
 	}
 
-	data, err := cli.ContainerInspect(context.Background(),
-		skelArgs.ContainerID)
-	if err != nil {
-		log.Errorf("Error querying for container %s. %+v",
-			skelArgs.ContainerID, err)
-		return "", "", err
-	}
-
-	uuid := data.Config.Labels["io.kubernetes.pod.uid"]
-	name := data.Config.Hostname
-	log.Infof("getPodInfo success. container-id %s uuid %s name %s",
-		skelArgs.ContainerID, uuid, name)
-	return uuid, name, nil
+	return getPodUidAndNodeNameFromK8sAPI(podName, podNs)
 }
 
 // Add command
