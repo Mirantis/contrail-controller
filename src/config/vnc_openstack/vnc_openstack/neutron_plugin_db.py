@@ -3632,9 +3632,17 @@ class DBInterface(object):
     #end policy_count
 
     def _router_update_gateway(self, router_q, rtr_obj):
-        ext_gateway = router_q.get('external_gateway_info', None)
+        """
+        NOTE(gzimin): In case if router gateway is not updating
+        we can set param ext_gateway to old_ext_gateway if there
+        is no external_gateway_info in request. Then we check values
+        and if they are equal we just skip updating router gateway.
+        """
         old_ext_gateway = self._get_external_gateway_info(rtr_obj)
+        ext_gateway = router_q.get('external_gateway_info', old_ext_gateway)
         if ext_gateway or old_ext_gateway:
+            if ext_gateway == old_ext_gateway:
+                return
             network_id = None
             if ext_gateway:
                 network_id = ext_gateway.get('network_id', None)
