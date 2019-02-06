@@ -250,20 +250,31 @@ class IntrospectUtil(object):
     #end _mk_url_str
 
     def _load(self, path):
+        resp = None
         url = self._mk_url_str(path)
         try:
             resp = requests.get(url, timeout=self._timeout)
         except requests.ConnectionError:
-            url = self._mk_url_str(path, True)
-            resp = requests.get(url, timeout=self._timeout, verify=\
-                    self._cacert, cert=(self._certfile, self._keyfile))
-        if resp.status_code == requests.codes.ok:
-            return etree.fromstring(resp.text)
+            if os.path.isfile(self._cacert) and \
+               os.path.isfile(self._certfile) and \
+               os.path.isfile(self._keyfile):
+                url = self._mk_url_str(path, True)
+                try:
+                    resp = requests.get(url, timeout=self._timeout,
+                                        verify=self._cacert,
+                                        cert=(self._certfile, self._keyfile))
+                except Exception as e:
+                    print e
+                    return None
+        if resp:
+            if resp.status_code != requests.codes.ok:
+                if self._debug:
+                    print 'URL: %s : HTTP error: %s' % (url, str(resp.status_code))
+                return None
         else:
-            if self._debug:
-                print 'URL: %s : HTTP error: %s' % (url, str(resp.status_code))
             return None
 
+        return etree.fromstring(resp.text)
     #end _load
 
     def get_uve(self, tname):
