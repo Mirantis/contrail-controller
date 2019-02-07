@@ -1552,7 +1552,8 @@ class VncApiServer(object):
         self._pipe_start_app = auth_svc.get_middleware_app()
         self._auth_svc = auth_svc
 
-        if int(self._args.worker_id) == 0:
+        if (int(self._args.worker_id) == 0 and
+            not self._args.keystone_sync_on_demand):
             try:
                 self._extension_mgrs['resync'].map(
                     self._resync_domains_projects)
