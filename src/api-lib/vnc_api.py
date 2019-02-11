@@ -26,7 +26,7 @@ import cfgm_common
 from cfgm_common import rest, utils
 from cfgm_common import _obj_serializer_all
 from cfgm_common.exceptions import (
-        ServiceUnavailableError, NoIdError, PermissionDenied,
+        ServiceUnavailableError, NoIdError, PermissionDenied, OverQuota,
         RefsExistError, TimeOutError, BadRequest, HttpError,
         ResourceTypeUnknownError, AuthFailed)
 from cfgm_common import ssl_adapter
@@ -973,7 +973,6 @@ class VncApi(object):
                     from neutron_lib.exceptions import OverQuota
                     raise OverQuota(overs=content)
                 except ImportError:
-                    from cfgm_common.exceptions import OverQuota
                     raise OverQuota(content)
             elif status == 409:
                 raise RefsExistError(content)
