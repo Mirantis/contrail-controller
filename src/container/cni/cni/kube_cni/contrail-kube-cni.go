@@ -11,8 +11,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"os/exec"
 	"strings"
 
 	"../contrail"
@@ -32,34 +30,7 @@ func BytesToStrings(data []byte) []string {
 	return out
 }
 
-func getKubeConfigPath() (string, error) {
-
-	out, err := exec.Command("pgrep", "-f", "kubelet").Output()
-	if err != nil {
-		return "", err
-	}
-	processID := strings.TrimSpace(string(out))
-
-	cmdline, err := ioutil.ReadFile(fmt.Sprintf("/proc/%s/cmdline", processID))
-	if err != nil {
-		return "", err
-	}
-	args := BytesToStrings(cmdline)
-	for _, arg := range args {
-		if strings.HasPrefix(arg, "--kubeconfig=") {
-			return arg[13:], nil
-		}
-	}
-	return "", nil
-}
-
-func getPodUidAndNodeNameFromK8sAPI(podName string, podNs string) (string, string, error) {
-
-	kubeconfig, err := getKubeConfigPath()
-	if err != nil {
-		log.Errorf("ERROR in getting kubeconfig path: %s", err)
-		return "", "", err
-	}
+func getPodUidAndNodeNameFromK8sAPI(podName string, podNs string, kubeconfig string) (string, string, error) {
 
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
@@ -74,15 +45,15 @@ func getPodUidAndNodeNameFromK8sAPI(podName string, podNs string) (string, strin
 
 	pod, err := clientset.CoreV1().Pods(podNs).Get(podName, metav1.GetOptions{})
 	if err != nil {
-		log.Errorf("clientset.CoreV1.Pods.Get for %s: %s", podName, err)
-		return "", "", err
+		// if pod does not exsist in K8s it shouldn't exists at all
+		log.Errorf("clientset.CoreV1.Pods.Get for pod %s: NS: %s Error: %s", podName, podNs, err)
+		return "", "", fmt.Errorf("Cannot get Pod.UID from K8s API")
 	}
-
-	return string(pod.UID), pod.Spec.NodeName, nil
+	return string(pod.UID), podName, nil
 }
 
 // Use K8s client to get POD_container uuid and nodename from K8s API
-func getPodInfo(skelArgs *skel.CmdArgs) (string, string, error) {
+func getPodInfo(skelArgs *skel.CmdArgs, oper string, kubeconfig string) (string, string, error) {
 	var podName, podNs string
 	args := strings.Split(skelArgs.Args, ";")
 	for _, arg := range args {
@@ -101,21 +72,25 @@ func getPodInfo(skelArgs *skel.CmdArgs) (string, string, error) {
 	if len(podNs) == 0 {
 		return "", "", errors.New("Cannot get POD namespace from Args")
 	}
-
-	return getPodUidAndNodeNameFromK8sAPI(podName, podNs)
+	if oper == "DEL" {
+		return "", podName, nil
+	}
+	containerUuid, containerName, err := getPodUidAndNodeNameFromK8sAPI(podName, podNs, kubeconfig)
+	log.Infof("From K8s received:  containerUuid: %s containerName: %s ", containerUuid, containerName)
+	return containerUuid, containerName, err
 }
 
 // Add command
 func CmdAdd(skelArgs *skel.CmdArgs) error {
 	// Initialize ContrailCni module
-	cni, err := contrailCni.Init(skelArgs)
+	cni, k8s, err := contrailCni.Init(skelArgs)
 	if err != nil {
 		return err
 	}
 
 	log.Infof("Came in Add for container %s", skelArgs.ContainerID)
 	// Get UUID and Name for container
-	containerUuid, containerName, err := getPodInfo(skelArgs)
+	containerUuid, containerName, err := getPodInfo(skelArgs, "ADD", k8s.Kubeconfig)
 	if err != nil {
 		log.Errorf("Error getting UUID/Name for Container")
 		return err
@@ -131,28 +106,28 @@ func CmdAdd(skelArgs *skel.CmdArgs) error {
 		log.Errorf("Failed processing Add command.")
 		return err
 	}
-
 	return nil
 }
 
 // Del command
 func CmdDel(skelArgs *skel.CmdArgs) error {
 	// Initialize ContrailCni module
-	cni, err := contrailCni.Init(skelArgs)
+	cni, k8s, err := contrailCni.Init(skelArgs)
 	if err != nil {
+		log.Errorf("Cannot initialize ContrailCNI for %s", skelArgs)
 		return err
 	}
 
 	log.Infof("Came in Del for container %s", skelArgs.ContainerID)
 	// Get UUID and Name for container
-	containerUuid, containerName, err := getPodInfo(skelArgs)
+	_, containerName, err := getPodInfo(skelArgs, "DEL", k8s.Kubeconfig)
 	if err != nil {
 		log.Errorf("Error getting UUID/Name for Container")
 		return err
 	}
 
 	// Update UUID and Name for container
-	cni.Update(containerName, containerUuid, "")
+	cni.Update(containerName, "", "")
 	cni.Log()
 
 	// Handle Del command
@@ -161,7 +136,6 @@ func CmdDel(skelArgs *skel.CmdArgs) error {
 		log.Errorf("Failed processing Del command.")
 		return err
 	}
-
 	return nil
 }
 
