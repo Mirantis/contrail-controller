@@ -13,8 +13,8 @@ import (
 	"../common"
 	"../iptables"
 	"../link_local_ip"
-	"../utils"
 	log "../logging"
+	"../utils"
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	"github.com/containernetworking/cni/pkg/version"
@@ -59,6 +59,9 @@ const VIF_TYPE_MACVLAN = "macvlan"
 // host network-namespace is defined below
 const CONTRAIL_PARENT_INTERFACE = "eth0"
 
+// Default path for kubeconfig file
+const KUBECONFIG = "/etc/kubernetes/kubelet.kubeconfig"
+
 // Definition of Logging arguments in form of json in STDIN
 type ContrailCni struct {
 	cniArgs       *skel.CmdArgs
@@ -74,8 +77,13 @@ type ContrailCni struct {
 	VRouter       VRouter
 }
 
+type KubernetesConf struct {
+	Kubeconfig string `json:"kubeconfig"`
+}
+
 type cniJson struct {
-	ContrailCni ContrailCni `json:"contrail"`
+	ContrailCni    ContrailCni    `json:"contrail"`
+	KubernetesConf KubernetesConf `json:"kubernetes"`
 }
 
 // Apply logging configuration. We use log packet for logging.
@@ -98,21 +106,22 @@ func (cni *ContrailCni) Log() {
 	cni.VRouter.Log()
 }
 
-func Init(args *skel.CmdArgs) (*ContrailCni, error) {
+func Init(args *skel.CmdArgs) (*ContrailCni, *KubernetesConf, error) {
 	vrouter, _ := VRouterInit(args.StdinData)
 	cni := ContrailCni{cniArgs: args, Mode: CNI_MODE_K8S,
 		VifType: VIF_TYPE_VETH, VifParent: CONTRAIL_PARENT_INTERFACE,
 		LogDir: LOG_DIR, LogLevel: LOG_LEVEL, VRouter: *vrouter}
-	json_args := cniJson{ContrailCni: cni}
+	k8s := KubernetesConf{Kubeconfig: KUBECONFIG}
+	json_args := cniJson{ContrailCni: cni, KubernetesConf: k8s}
 
 	if err := json.Unmarshal(args.StdinData, &json_args); err != nil {
 		log.Errorf("Error decoding stdin\n %s \n. Error %+v",
 			string(args.StdinData), err)
-		return nil, err
+		return nil, nil, err
 	}
 
 	json_args.ContrailCni.loggingInit()
-	return &json_args.ContrailCni, nil
+	return &json_args.ContrailCni, &json_args.KubernetesConf, nil
 }
 
 func (cni *ContrailCni) Update(containerName, containerUuid,
@@ -236,6 +245,15 @@ func (cni *ContrailCni) CmdAdd() error {
  * Delete message handlers
  ****************************************************************************/
 func (cni *ContrailCni) CmdDel() error {
+
+	if cni.ContainerUuid == "" {
+		cni.ContainerUuid = cni.VRouter.getVmIDFromPortList(cni.cniArgs.ContainerID)
+		if cni.ContainerUuid == "" {
+			log.Infof("POD ContainerUuid has not been found for ContainerID %s ", cni.cniArgs.ContainerID)
+			return nil
+		}
+	}
+
 	intf := cni.makeInterface(0)
 	intf.Log()
 
@@ -263,7 +281,7 @@ func (cni *ContrailCni) CmdDel() error {
 	err = cni.VRouter.Del(cni.cniArgs.ContainerID, cni.ContainerUuid,
 		cni.ContainerVn, updateAgent)
 	if err != nil {
-		log.Errorf("Error deleting interface from agent")
+		log.Errorf("Error deleting interface from agent: %s", err)
 	}
 
 	comment := strings.Join([]string{cni.ContainerName, "VRouter-linklocal"}, ":")
