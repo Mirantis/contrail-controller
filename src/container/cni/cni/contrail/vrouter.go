@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	log "../logging"
@@ -26,8 +27,8 @@ import (
 // Default VRouter values
 const VROUTER_AGENT_IP = "127.0.0.1"
 const VROUTER_AGENT_PORT = 9091
-const VROUTER_POLL_TIMEOUT = 10
-const VROUTER_POLL_RETRIES = 30
+const VROUTER_POLL_TIMEOUT = 3
+const VROUTER_POLL_RETRIES = 20
 
 //Directory containing configuration for the container
 const VROUTER_CONFIG_DIR = "/var/lib/contrail/ports/vm"
@@ -47,6 +48,37 @@ type VRouter struct {
 
 type vrouterJson struct {
 	VRouter VRouter `json:"contrail"`
+}
+
+func (vrouter *VRouter) getVmIDFromPortList(containerId string) string {
+	vrouter.containerId = containerId
+	files, err := ioutil.ReadDir(vrouter.Dir)
+	if err != nil {
+		log.Errorf("Cannot walk trought %s Error: %s", vrouter.Dir, err)
+	}
+	for _, file := range files {
+		if file.Mode().IsDir() {
+			continue
+		}
+		fullpath := vrouter.Dir + "/" + file.Name()
+		data, err := ioutil.ReadFile(fullpath)
+		if err != nil {
+			log.Errorf("Cannot read file %s Error: %s", fullpath, err)
+			continue
+		}
+
+		//need to check for file type to detect filter off non-text files
+		fileType := http.DetectContentType(data)
+		if strings.Index(fileType, "text") == -1 {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.Index(line, vrouter.containerId) > -1 {
+				return file.Name()
+			}
+		}
+	}
+	return ""
 }
 
 // Make filename to store config
@@ -172,7 +204,6 @@ func (vrouter *VRouter) Get(url string) (*Result, error) {
 func (vrouter *VRouter) PollUrl(url string) (*Result, error) {
 	var msg string
 	for i := 0; i < vrouter.PollRetries; i++ {
-		vrouter.SyncPorts()
 		result, err := vrouter.Get(url)
 		if err == nil {
 			log.Infof("Get from vrouter passed. Result %+v", result)
@@ -440,22 +471,6 @@ func (vrouter *VRouter) Poll(containerUuid, containerVn string) (*Result,
 	}
 
 	return result, nil
-}
-
-/****************************************************************************
- *  Sync ports
- ****************************************************************************/
-func (vrouter *VRouter) SyncPorts() (*Result,
-	error) {
-	result, err := vrouter.Get("/syncports")
-	if err == nil {
-		log.Infof("Get from vrouter passed. Result %+v", result)
-		return result, nil
-	}
-	msg := fmt.Sprintf("vRouter port synchronization Error : %v\n",
-		err)
-	log.Errorf(msg)
-	return nil, fmt.Errorf(msg)
 }
 
 /****************************************************************************
