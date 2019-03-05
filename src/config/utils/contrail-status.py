@@ -254,23 +254,13 @@ class IntrospectUtil(object):
         try:
             resp = requests.get(url, timeout=self._timeout)
         except requests.ConnectionError:
-            if os.path.isfile(self._cacert) and \
-               os.path.isfile(self._certfile) and \
-               os.path.isfile(self._keyfile):
-                url = self._mk_url_str(path, True)
-                try:
-                    resp = requests.get(url, timeout=self._timeout,
-                                        verify=self._cacert,
-                                        cert=(self._certfile, self._keyfile))
-                except Exception as e:
-                    print e
-                    return None
-        if resp:
-            if resp.status_code != requests.codes.ok:
-                if self._debug:
-                    print 'URL: %s : HTTP error: %s' % (url, str(resp.status_code))
-                return None
-        else:
+            url = self._mk_url_str(path, True)
+            resp = requests.get(url, timeout=self._timeout,
+                                verify=self._cacert,
+                                cert=(self._certfile, self._keyfile))
+        if resp.status_code != requests.codes.ok:
+            if self._debug:
+                print 'URL: %s : HTTP error: %s' % (url, str(resp.status_code))
             return None
 
         return etree.fromstring(resp.text)
@@ -541,7 +531,7 @@ def get_svc_uve_info(svc_name, svc_status, debug, detail, timeout, keyfile,
             svc_uve_status, svc_uve_description = \
                 get_svc_uve_status(svc_name, debug, timeout, keyfile,\
                                    certfile, cacert)
-        except requests.ConnectionError, e:
+        except (requests.ConnectionError, IOError), e:
             svc_uve_status = "connection-error"
             if debug:
                 print 'Socket Connection error : %s' % (str(e))
