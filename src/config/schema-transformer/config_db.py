@@ -254,6 +254,10 @@ class GlobalSystemConfigST(DBBaseST):
             old_rtgt_name = "target:%d:%s" % (cls._autonomous_system, target)
             old_rtgt_obj = RouteTarget(old_rtgt_name)
 
+            route_tgt.obj = RouteTargetST.read_vnc_obj(
+                fq_name=[old_rtgt_name],
+                fields=['logical_router_back_refs', 'routing_instance_back_refs'])
+
             for ri_ref in route_tgt.obj.get_routing_instance_back_refs() or []:
                 rt_inst = RoutingInstanceST.get(':'.join(ri_ref['to']))
                 if rt_inst:
@@ -529,7 +533,13 @@ class VirtualNetworkST(DBBaseST):
         self.update_multiple_refs('virtual_machine_interface', {})
         self.delete_inactive_service_chains(self.service_chains)
         for ri_name in self.routing_instances:
-            RoutingInstanceST.delete(ri_name, True)
+            ri = RoutingInstanceST.get(ri_name)
+            # Don't delete default RI, API server will do and schema will
+            # clean RT and its internal when it will receive the RI delete
+            # notification. That prevents ST to fail to delete RT because RI
+            # was not yet removed
+            if not ri.is_default:
+                ri.delete(ri_name, True)
         if self.acl:
             self._vnc_lib.access_control_list_delete(id=self.acl.uuid)
         if self.dynamic_acl:
@@ -3390,11 +3400,12 @@ class BgpRouterST(DBBaseST):
         if update:
             self.obj.set_bgp_router_parameters(params)
         router_refs = self.obj.get_bgp_router_refs()
-        peering_attribs = router_refs[0]['attr']
-        if peering_attribs != bgpaas.peering_attribs:
-            self.obj.set_bgp_router_list([router_refs[0]['to']],
-                                         [bgpaas.peering_attribs])
-            update = True
+        if router_refs:
+            peering_attribs = router_refs[0]['attr']
+            if peering_attribs != bgpaas.peering_attribs:
+                self.obj.set_bgp_router_list([router_refs[0]['to']],
+                                             [bgpaas.peering_attribs])
+                update = True
 
         old_refs = self.obj.get_virtual_machine_interface_back_refs() or []
         old_uuids = set([ref['uuid'] for ref in old_refs])
