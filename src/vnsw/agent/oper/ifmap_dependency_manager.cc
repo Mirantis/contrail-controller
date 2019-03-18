@@ -30,6 +30,7 @@
 #include "filter/policy_set.h"
 #include "cfg/cfg_init.h"
 #include "oper/security_logging_object.h"
+#include "oper/multicast_policy.h"
 #include "oper/project_config.h"
 
 #include <boost/assign/list_of.hpp>
@@ -127,6 +128,8 @@ void IFMapDependencyManager::Initialize(Agent *agent) {
         "virtual-machine-interface-routing-instance",
         "virtual-network",
         "virtual-network-network-ipam",
+        "virtual-port-group",
+        "virtual-port-group-physical-interface",
         "virtual-DNS",
         "global-vrouter-config",
         "virtual-router",
@@ -134,7 +137,8 @@ void IFMapDependencyManager::Initialize(Agent *agent) {
         "bridge-domain",
         "virtual-machine-interface-bridge-domain",
         "firewall-policy-firewall-rule",
-        "port-tuple"
+        "port-tuple",
+        "multicast-policy"
     };
 
     // Link table
@@ -200,6 +204,11 @@ void IFMapDependencyManager::Initialize(Agent *agent) {
     ReactionMap react_ipam = map_list_of<string, PropagateList>
             ("virtual-network-network-ipam", list_of("nil"));
     policy->insert(make_pair("network-ipam", react_ipam));
+
+    ReactionMap react_bgpaas = map_list_of<string, PropagateList>
+            ("bgpaas-control-node-zone",
+            list_of("bgpaas-virtual-machine-interface"));
+    policy->insert(make_pair("bgp-as-a-service", react_bgpaas));
 
     InitializeDependencyRules(agent);
 }
@@ -601,11 +610,15 @@ void IFMapDependencyManager::InitializeDependencyRules(Agent *agent) {
     RegisterConfigHandler(this, "access-control-list",
                           agent ? agent->acl_table() : NULL);
 
+    RegisterConfigHandler(this, "multicast-policy",
+                          agent ? agent->mp_table() : NULL);
+
     ////////////////////////////////////////////////////////////////////////
     // VN <----> RI
     //    <----> ACL
     //    <----> VN-IPAM <----> IPAM
     //    <----> SecurityLoggingObject
+    //    <----> Multicast Policy
     ////////////////////////////////////////////////////////////////////////
     AddDependencyPath("virtual-network",
                       MakePath("virtual-network-routing-instance",
@@ -629,6 +642,9 @@ void IFMapDependencyManager::InitializeDependencyRules(Agent *agent) {
                                "logical-router-virtual-network", true,
                                "logical-router-virtual-network",
                                "logical-router", true));
+    AddDependencyPath("virtual-network",
+                      MakePath("virtual-network-multicast-policy",
+                               "multicast-policy", true));
     RegisterConfigHandler(this, "virtual-network",
                           agent ? agent->vn_table() : NULL);
 
@@ -751,6 +767,13 @@ void IFMapDependencyManager::InitializeDependencyRules(Agent *agent) {
                                "physical-router-physical-interface",
                                "physical-router", true));
     AddDependencyPath("virtual-machine-interface",
+                      MakePath("virtual-port-group-virtual-machine-interface",
+                               "virtual-port-group", false,
+                               "virtual-port-group-physical-interface",
+                               "physical-interface", false,
+                               "physical-router-physical-interface",
+                               "physical-router", true));
+    AddDependencyPath("virtual-machine-interface",
                       MakePath("bgpaas-virtual-machine-interface",
                                "bgp-as-a-service", true,
                                "bgpaas-bgp-router",
@@ -869,6 +892,14 @@ void IFMapDependencyManager::InitializeDependencyRules(Agent *agent) {
     AddDependencyPath("physical-interface",
                       MakePath("physical-router-physical-interface",
                                "physical-router", true));
+    ////////////////////////////////////////////////////////////////////////
+    // physical-interface <----> virtual-port-group
+    ////////////////////////////////////////////////////////////////////////
+    AddDependencyPath("physical-interface",
+                    MakePath("virtual-port-group-physical-interface",
+                             "virtual-port-group-physical-interface", true,
+                             "virtual-port-group-physical-interface",
+                             "virtual-port-group", true));
     RegisterConfigHandler(this, "physical-interface",
                           agent ? agent->interface_table() : NULL);
 

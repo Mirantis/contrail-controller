@@ -17,6 +17,7 @@
 
 #include "cmn/agent.h"
 #include "oper/interface_common.h"
+#include "oper/tunnel_nh.h"
 #include "oper/nexthop.h"
 #include "oper/route_common.h"
 #include "oper/mirror_table.h"
@@ -270,13 +271,30 @@ bool RouteKSyncEntry::BuildArpFlags(const DBEntry *e, const AgentPath *path,
         }
         break;
 
+
     case NextHop::COMPOSITE:
         // ECMP flows have composite NH. We want to do routing for ECMP flows
         // So, set proxy_arp flag
         proxy_arp = true;
         break;
 
+    case NextHop::TUNNEL:
+        {
+            // set proxy arp flag for MPLS VPN routes
+            // these routes' nexthop is either labelled tunnel or
+            // composite of labelled tunnel nexthops
+            const TunnelNH *tunnel_nh = static_cast<const TunnelNH *>(nh);
+            if (tunnel_nh->GetTunnelType().GetType() ==
+                                    TunnelType::MPLS_OVER_MPLS) {
+                proxy_arp = true;
+                break;
+                // other tunnel cases should be evaluated under
+                // default case
+            }
+        }
+
     default:
+
         if (mac != MacAddress::ZeroMac()) {
             // Proxy-ARP without flood if mac-stitching is present
             proxy_arp = true;
@@ -560,7 +578,12 @@ int RouteKSyncEntry::Encode(sandesh_op::type op, uint8_t replace_plen,
     int label = 0;
     int flags = 0;
     if (rt_type_ != Agent::INET4_MULTICAST) {
-        if (nexthop != NULL && nexthop->type() == NextHop::TUNNEL) {
+        // if next hop is tunnel
+        // or nexthop is composite and composite type is LU_ECMP, then
+        // label is valid
+        if (nexthop != NULL && ((nexthop->type() == NextHop::TUNNEL) ||
+                    ((nexthop->type() == NextHop::COMPOSITE) &&
+                    (nexthop->CompositeType() == Composite::LU_ECMP)))) {
             label = label_;
             flags |= VR_RT_LABEL_VALID_FLAG;
         }

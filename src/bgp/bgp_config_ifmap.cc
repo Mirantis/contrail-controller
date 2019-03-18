@@ -29,9 +29,6 @@ using std::string;
 using std::vector;
 using boost::iequals;
 
-#define BGP_RTGT_MIN_ID_AS2 8000000
-#define BGP_RTGT_MIN_ID_AS4 8000
-
 const int BgpIfmapConfigManager::kConfigTaskInstanceId = 0;
 
 static BgpNeighborConfig::AddressFamilyList default_addr_family_list;
@@ -600,18 +597,21 @@ bool BgpIfmapPeeringConfig::GetRouterPair(DBGraph *db_graph,
             remote_instance = instance_name;
         }
     }
-    if (local == NULL || remote == NULL) {
-        return false;
-    }
-    if (local_router_type == "bgpaas-server" &&
-        remote_router_type != "bgpaas-client") {
-        return false;
-    }
-    if (local_router_type != "bgpaas-server" &&
-        remote_router_type == "bgpaas-client") {
-        return false;
-    }
-    if (local_instance != remote_instance) {
+
+    if ((local == NULL || remote == NULL) || (local_router_type ==
+         "bgpaas-server" && remote_router_type != "bgpaas-client") ||
+        (local_router_type != "bgpaas-server" && remote_router_type ==
+         "bgpaas-client") || (local_instance != remote_instance)) {
+        BGP_LOG_STR(BgpConfig, SandeshLevel::SYS_DEBUG, BGP_LOG_FLAG_SYSLOG,
+                 "localname: " << localname <<
+                 ((local == NULL) ? " Local node not present" :
+                                  " Local node present") <<
+                 ((remote == NULL) ? " Remote node not present" :
+                                  " Remote node present") <<
+                 " local_router_type: " << local_router_type <<
+                 " remote_router_type: " << remote_router_type <<
+                 " local instance: " << local_instance <<
+                 " remote instance: " << remote_instance);
         return false;
     }
 
@@ -1107,10 +1107,33 @@ void BgpIfmapInstanceConfig::ProcessIdentifierUpdate(uint32_t new_id,
     data_.set_import_list(import_list);
 }
 
-string BgpIfmapInstanceConfig::GetVitFromId(uint32_t identifier) {
+void BgpIfmapInstanceConfig::ProcessASUpdate(uint32_t new_as, uint32_t old_as) {
+    BgpInstanceConfig::RouteTargetList import_list = data_.import_list();
+    if (old_as > 0) {
+        string old_es_rtarget = "target:" + GetESRouteTarget(old_as);
+        import_list.erase(old_es_rtarget);
+    }
+    if (new_as > 0) {
+        string new_es_rtarget = "target:" + GetESRouteTarget(new_as);
+        import_list.insert(new_es_rtarget);
+    }
+    data_.set_import_list(import_list);
+}
+
+string BgpIfmapInstanceConfig::GetVitFromId(uint32_t identifier) const {
     if (identifier == 0)
         return "";
     return Ip4Address(identifier).to_string() + ":" + integerToString(index());
+}
+
+string BgpIfmapInstanceConfig::GetESRouteTarget(uint32_t as) const {
+    if (as == 0)
+        return "";
+    if (as > 0xffFF)
+        return integerToString(as) + ":" +
+            integerToString(EVPN_ES_IMPORT_ROUTE_TARGET_AS4);
+    return integerToString(as) + ":" +
+        integerToString(EVPN_ES_IMPORT_ROUTE_TARGET_AS2);
 }
 
 void BgpIfmapInstanceConfig::UpateRouteTargetIndex(
@@ -1123,9 +1146,11 @@ void BgpIfmapInstanceConfig::UpateRouteTargetIndex(
             string rtarget_id = value.substr(value.rfind(":")+1);
             string rtarget_asn = value.substr(value.find(":") + 1,
                                                   value.rfind(":") - 1);
-            if ((rtarget_asn.find(".") == string::npos) &&
-                    (BGP_RTGT_MIN_ID_AS2 <= strtoul(rtarget_id.c_str(),
-                                                    NULL, 0))) {
+            // Accout for EVPN_ES_IMPORT_ROUTE_TARGET_AS2 which should be 1 less
+            // than BGP_RTGT_MIN_ID_AS2.
+            if (rtarget_asn.find(".") == string::npos &&
+                strtoul(rtarget_id.c_str(), NULL, 0) >=
+                    EVPN_ES_IMPORT_ROUTE_TARGET_AS2) {
                 remove_rt_list.insert(value);
             }
         }
@@ -1136,7 +1161,7 @@ void BgpIfmapInstanceConfig::UpateRouteTargetIndex(
         size_t pos = value.rfind(":") + 1;
         string id = value.substr(pos);
         uint32_t new_id = strtoul(id.c_str(), NULL, 0) - BGP_RTGT_MIN_ID_AS2
-                                                          + BGP_RTGT_MIN_ID_AS4;
+                                                       + BGP_RTGT_MIN_ID_AS4;
         string new_id_str = integerToString(new_id);
         value.replace(pos, strlen(value.c_str()) - pos, new_id_str);
         rt_list.insert(value);
@@ -1168,13 +1193,15 @@ void BgpIfmapInstanceConfig::UpateRouteTargetIndex(
     }
 }
 
-// Populate Vit in import list
-void BgpIfmapInstanceConfig::InsertVitInImportList(
+// Populate vrf import route-target (used for MVPN) and ES route target in
+// import list.
+void BgpIfmapInstanceConfig::InsertVitAndESRTargetInImportList(
                          BgpIfmapConfigManager *mgr,
                          BgpInstanceConfig::RouteTargetList& import_list) {
     const BgpIfmapInstanceConfig *master_instance =
         mgr->config()->FindInstance(BgpConfigManager::kMasterInstance);
     uint32_t bgp_identifier = 0;
+    uint32_t as = 0;
     if (master_instance) {
         const BgpIfmapProtocolConfig *master_protocol =
             master_instance->protocol_config();
@@ -1182,12 +1209,14 @@ void BgpIfmapInstanceConfig::InsertVitInImportList(
             if (master_protocol->protocol_config()) {
                 bgp_identifier =
                     master_protocol->protocol_config()->identifier();
+                as = master_protocol->protocol_config()->autonomous_system();
             }
         }
     }
-    if (bgp_identifier > 0) {
+    if (bgp_identifier > 0)
         import_list.insert("target:" + GetVitFromId(ntohl(bgp_identifier)));
-    }
+    if (as > 0)
+        import_list.insert("target:" + GetESRouteTarget(as));
 }
 
 //
@@ -1259,7 +1288,7 @@ void BgpIfmapInstanceConfig::Update(BgpIfmapConfigManager *manager,
         }
     }
 
-    InsertVitInImportList(manager, import_list);
+    InsertVitAndESRTargetInImportList(manager, import_list);
     UpateRouteTargetIndex(manager, import_list, export_list);
     data_.set_import_list(import_list);
     data_.set_export_list(export_list);
@@ -1413,17 +1442,21 @@ void BgpIfmapInstanceConfig::DeleteRoutingPolicy(
     routing_policies_.erase(rtp->name());
 }
 
-void BgpIfmapConfigData::ProcessIdentifierUpdate(
+void BgpIfmapConfigData::ProcessIdentifierAndASUpdate(
                             BgpIfmapConfigManager* manager,
-                            uint32_t new_id, uint32_t old_id) {
-    assert(new_id != old_id);
+                            uint32_t new_id, uint32_t old_id,
+                            uint32_t new_as, uint32_t old_as) {
+    assert(new_id != old_id || new_as != old_as);
     for (unsigned int i = 0; i < instances_.size(); i++) {
         BgpIfmapInstanceConfig * ifmap_config = instances_.At(i);
         if (!ifmap_config)
             continue;
-        ifmap_config->ProcessIdentifierUpdate(new_id, old_id);
+        if (new_id != old_id)
+            ifmap_config->ProcessIdentifierUpdate(new_id, old_id);
+        if (new_as != old_as)
+            ifmap_config->ProcessASUpdate(new_as, old_as);
         manager->UpdateInstanceConfig(ifmap_config,
-                BgpConfigManager::CFG_CHANGE);
+                                      BgpConfigManager::CFG_CHANGE);
     }
 }
 
@@ -1580,6 +1613,8 @@ BgpIfmapPeeringConfig *BgpIfmapConfigData::CreatePeering(
             peerings_.insert(make_pair(peering->node()->name(), peering));
     assert(result.second);
     peering->instance()->AddPeering(peering);
+    BGP_LOG_STR(BgpConfig, SandeshLevel::SYS_DEBUG, BGP_LOG_FLAG_SYSLOG,
+         "Creating BgpIfmapPeering " << peering->node()->name());
     return peering;
 }
 
@@ -1591,6 +1626,8 @@ BgpIfmapPeeringConfig *BgpIfmapConfigData::CreatePeering(
 // via the destructor when the IFMapNodeProxy is destroyed.
 //
 void BgpIfmapConfigData::DeletePeering(BgpIfmapPeeringConfig *peering) {
+    BGP_LOG_STR(BgpConfig, SandeshLevel::SYS_DEBUG, BGP_LOG_FLAG_SYSLOG,
+         "Deleting BgpIfmapPeering " << peering->node()->name());
     peering->instance()->DeletePeering(peering);
     peerings_.erase(peering->node()->name());
     delete peering;
@@ -2071,6 +2108,7 @@ bool BgpIfmapGlobalQosConfig::Update(BgpIfmapConfigManager *manager,
 
     if (data_.control_dscp() != dscp.control) {
         data_.set_control_dscp(dscp.control);
+        Sandesh::SetDscpValue(dscp.control);
         changed = true;
     }
     if (data_.analytics_dscp() != dscp.analytics) {
@@ -2238,16 +2276,7 @@ void BgpIfmapConfigManager::ProcessBgpProtocol(const BgpConfigDelta &delta) {
         event = BgpConfigManager::CFG_ADD;
         if (rti == NULL) {
             rti = config_->LocateInstance(instance_name);
-            Notify(rti->instance_config(), BgpConfigManager::CFG_ADD);
-
-            vector<string> import_rt(rti->import_list().begin(),
-                                     rti->import_list().end());
-            vector<string> export_rt(rti->export_list().begin(),
-                                     rti->export_list().end());
-            BGP_CONFIG_LOG_INSTANCE(Create, server(), rti,
-                SandeshLevel::SYS_DEBUG, BGP_LOG_FLAG_ALL,
-                import_rt, export_rt,
-                rti->virtual_network(), rti->virtual_network_index());
+            UpdateInstanceConfig(rti, event);
         }
         protocol = rti->LocateProtocol();
         protocol->SetNodeProxy(proxy);
@@ -2277,10 +2306,13 @@ void BgpIfmapConfigManager::ProcessBgpProtocol(const BgpConfigDelta &delta) {
     autogen::BgpRouter *rt_config =
         static_cast<autogen::BgpRouter *>(delta.obj.get());
     uint32_t old_id = protocol->protocol_config()->identifier();
+    uint32_t old_as = protocol->protocol_config()->autonomous_system();
     protocol->Update(this, rt_config);
     uint32_t new_id = protocol->protocol_config()->identifier();
-    if (new_id != old_id) {
-        config_->ProcessIdentifierUpdate(this, new_id, old_id);
+    uint32_t new_as = protocol->protocol_config()->autonomous_system();
+    if (new_id != old_id || new_as != old_as) {
+        config_->ProcessIdentifierAndASUpdate(this, new_id, old_id, new_as,
+                                              old_as);
     }
     Notify(protocol->protocol_config(), event);
 
@@ -2415,10 +2447,16 @@ void BgpIfmapConfigManager::ProcessBgpPeering(const BgpConfigDelta &delta) {
     if (peering == NULL) {
         IFMapNodeProxy *proxy = delta.node.get();
         if (proxy == NULL) {
+            BGP_LOG_STR(BgpConfig, SandeshLevel::SYS_DEBUG, BGP_LOG_FLAG_SYSLOG,
+                 "ProcessBgpPeering failed. Cannot find proxy " <<
+                 delta.id_name);
             return;
         }
         IFMapNode *node = proxy->node();
         if (node == NULL || delta.obj.get() == NULL) {
+            BGP_LOG_STR(BgpConfig, SandeshLevel::SYS_DEBUG, BGP_LOG_FLAG_SYSLOG,
+                 "ProcessBgpPeering failed. Cannot find node/obj " <<
+                  delta.id_name);
             return;
         }
 
@@ -2428,11 +2466,13 @@ void BgpIfmapConfigManager::ProcessBgpPeering(const BgpConfigDelta &delta) {
             return;
         }
 
-        event = BgpConfigManager::CFG_ADD;
         string instance_name(IdentifierParent(routers.first->name()));
         BgpIfmapInstanceConfig *rti = config_->FindInstance(instance_name);
+        event = BgpConfigManager::CFG_ADD;
+        // Create rti if not present.
         if (rti == NULL) {
-            return;
+            rti = config_->LocateInstance(instance_name);
+            UpdateInstanceConfig(rti, event);
         }
         peering = config_->CreatePeering(rti, proxy);
     } else {

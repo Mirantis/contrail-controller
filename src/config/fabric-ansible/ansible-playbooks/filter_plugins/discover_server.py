@@ -9,7 +9,7 @@ import itertools
 import requests
 import gevent
 from gevent import Greenlet, monkey, pool, queue
-#monkey.patch_all()
+from pprint import pformat
 sys.path.append('/opt/contrail/fabric_ansible_playbooks/filter_plugins')
 sys.path.append('/opt/contrail/fabric_ansible_playbooks/common')
 from plugin_ironic import ImportIronicNodes
@@ -135,9 +135,13 @@ class FilterModule(object):
             # from CC and ipmi_nodes_details
             final_ipmi_details = []
             job_input = FilterModule._validate_job_ctx(job_ctx)
+            cluster_id = job_ctx.get('contrail_cluster_id')
+            cluster_token = job_ctx.get('auth_token')
             cc_host = job_input.get('contrail_command_host')
-            cc_auth_token = job_ctx.get('auth_token')
-            cc_node = CreateCCNode(cc_host, cc_auth_token)
+            cc_username = job_input.get('cc_username')
+            cc_password = job_input.get('cc_password')
+            cc_node = CreateCCNode(cc_host, cluster_id, cluster_token,
+                                   cc_username, cc_password)
             cc_nodes = cc_node.get_cc_nodes()
             cc_node_data = []
             for node in cc_nodes['nodes']:
@@ -179,7 +183,7 @@ class FilterModule(object):
             return {
                 'status': 'failure',
                 'error_msg': errmsg,
-                'discovery_log': DiscoveryLog.instance().dump()
+                'discover_log': DiscoveryLog.instance().dump()
             }
 
         return {
@@ -233,7 +237,7 @@ class FilterModule(object):
             return {
                 'status': 'failure',
                 'error_msg': errmsg,
-                'discovery_log': DiscoveryLog.instance().dump()
+                'discover_log': DiscoveryLog.instance().dump()
             }
         return ping_sweep_success_list
 
@@ -278,7 +282,7 @@ class FilterModule(object):
             {
                 'status': 'failure',
                 'error_msg': <string: error message>,
-                'discovery_log': <string: discovery_log>
+                'discover_log': <string: discover_log>
             }
             """
         try:
@@ -300,7 +304,7 @@ class FilterModule(object):
             return {
                 'status': 'failure',
                 'error_msg': errmsg,
-                'discovery_log': DiscoveryLog.instance().dump()
+                'discover_log': DiscoveryLog.instance().dump()
             }
 
         return list(set(ipmi_addresses))
@@ -403,7 +407,7 @@ class FilterModule(object):
             {
                 'status': 'failure',
                 'error_msg': <string: error message>,
-                'discovery_log': <string: discovery_log>
+                'discover_log': <string: discover_log>
             }
             """
         try:
@@ -455,7 +459,7 @@ class FilterModule(object):
             return {
                 'status': 'failure',
                 'error_msg': errmsg,
-                'discovery_log': DiscoveryLog.instance().dump()
+                'discover_log': DiscoveryLog.instance().dump()
             }
 
         return valid_ipmi_details
@@ -464,11 +468,17 @@ class FilterModule(object):
         try:
             job_input = FilterModule._validate_job_ctx(job_ctx)
             ironic_auth_args = job_input.get('ironic')
+            cluster_id = job_ctx.get('contrail_cluster_id')
+            cluster_token = job_ctx.get('auth_token')
             cc_host = job_input.get('contrail_command_host')
-            cc_auth_token = job_ctx.get('auth_token')
+            cc_username = job_input.get('cc_username')
+            cc_password = job_input.get('cc_password')
             ironic_node_object = ImportIronicNodes(auth_args=ironic_auth_args,
-                                                   cc_host=cc_host,
-                                                   cc_auth_token=cc_auth_token)
+                                                   cluster_id=cluster_id,
+                                                   cluster_token=cluster_token,
+                                                   cc_username=cc_username,
+                                                   cc_password=cc_password,
+                                                   cc_host=cc_host)
 
             registered_nodes = ironic_node_object.register_nodes(
                 ipmi_nodes_detail)
@@ -480,20 +490,31 @@ class FilterModule(object):
             return {
                 'status': 'failure',
                 'error_msg': errmsg,
-                'discovery_log': DiscoveryLog.instance().dump()
+                'discover_log': DiscoveryLog.instance().dump(),
+                'nodes': ""
             }
 
-        return registered_nodes
+        return {
+            'status': 'success',
+            'discover_log': DiscoveryLog.instance().dump(),
+            'nodes': registered_nodes
+        }
 
     def trigger_introspect(self, job_ctx, registered_nodes):
         try:
             job_input = FilterModule._validate_job_ctx(job_ctx)
             ironic_auth_args = job_input.get('ironic')
+            cluster_id = job_ctx.get('contrail_cluster_id')
+            cluster_token = job_ctx.get('auth_token')
             cc_host = job_input.get('contrail_command_host')
-            cc_auth_token = job_ctx.get('auth_token')
+            cc_username = job_input.get('cc_username')
+            cc_password = job_input.get('cc_password')
             ironic_node_object = ImportIronicNodes(auth_args=ironic_auth_args,
-                                              cc_host=cc_host,
-                                              cc_auth_token=cc_auth_token)
+                                              cluster_id=cluster_id,
+                                              cluster_token=cluster_token,
+                                              cc_username=cc_username,
+                                              cc_password=cc_password,
+                                              cc_host=cc_host)
             introspected_nodes = ironic_node_object.trigger_introspection(
                 registered_nodes)
         except Exception as e:
@@ -504,10 +525,14 @@ class FilterModule(object):
             return {
                 'status': 'failure',
                 'error_msg': errmsg,
-                'discovery_log': DiscoveryLog.instance().dump()
+                'discover_log': DiscoveryLog.instance().dump()
             }
 
-        return introspected_nodes
+        return {
+            'status': 'success',
+            'discover_log': DiscoveryLog.instance().dump(),
+            'nodes': introspected_nodes
+        }
 
     def import_ironic_nodes(self, job_ctx, added_nodes_list):
         """
@@ -545,24 +570,30 @@ class FilterModule(object):
                         'status': 'success',
                         'success_nodes': <list: successful introspected nodes>,
                         'failed_nodes': <list: failed introspected nodes>,
-                        'discovery_log': <list: discovery_log>
+                        'discover_log': <list: discover_log>
                     ]
                     if failure, returns
                     {
                         'status': 'failure',
                         'error_msg': <string: error message>,
-                        'discovery_log': <string: discovery_log>
+                        'discover_log': <string: discover_log>
                     }
                     """
         try:
             job_input = FilterModule._validate_job_ctx(job_ctx)
             ironic_auth_args = job_input.get('ironic')
+            cluster_id = job_ctx.get('contrail_cluster_id')
+            cluster_token = job_ctx.get('auth_token')
             cc_host = job_input.get('contrail_command_host')
-            cc_auth_token = job_ctx.get('auth_token')
+            cc_username = job_input.get('cc_username')
+            cc_password = job_input.get('cc_password')
 
             ironic_object = ImportIronicNodes(auth_args=ironic_auth_args,
+                                              cluster_id=cluster_id,
+                                              cluster_token=cluster_token,
                                               cc_host=cc_host,
-                                              cc_auth_token=cc_auth_token,
+                                              cc_username=cc_username,
+                                              cc_password=cc_password,
                                               added_nodes_list=added_nodes_list)
             ironic_object.read_nodes_from_db()
             success_nodes = []
@@ -584,7 +615,7 @@ class FilterModule(object):
             return {
                 'status': 'failure',
                 'error_msg': errmsg,
-                'discovery_log': DiscoveryLog.instance().dump()
+                'discover_log': DiscoveryLog.instance().dump()
             }
 
         return {

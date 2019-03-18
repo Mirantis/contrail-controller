@@ -58,6 +58,7 @@ public:
     }
     uint8_t SetEcmpFieldsToUse();
     bool KSyncEntrySandesh(Sandesh *resp);
+    COMPOSITETYPE CompositeType() const { return comp_type_;}
 private:
     void SetKSyncNhListSandeshData(KSyncNhListSandeshData *data) const;
     class KSyncComponentNH {
@@ -122,6 +123,7 @@ private:
     bool crypt_;
     bool crypt_path_available_;
     KSyncEntryPtr crypt_interface_;
+    TunnelType::Type transport_tunnel_type_;
     DISALLOW_COPY_AND_ASSIGN(NHKSyncEntry);
 };
 

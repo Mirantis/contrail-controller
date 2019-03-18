@@ -9,6 +9,7 @@ import gevent
 import uuid
 import time
 
+from attrdict import AttrDict
 from enum import Enum
 
 
@@ -140,7 +141,10 @@ class JobHandler(object):
             "job_execution_id": job_execution_id,
             "input": self._job_input,
             "job_template_fq_name": self._job_template_name,
-            "api_server_host": self._args.api_server_ip,
+            "api_server_host": self._args.api_server_ip.split(','),
+            "params": {
+                "device_list": self._device_list
+            },
             "vnc_api_init_params": {
                 "admin_user": self._args.admin_user,
                 "admin_password": self._args.admin_password,
@@ -150,14 +154,7 @@ class JobHandler(object):
                 "api_server_use_ssl":
                     self._args.api_server_use_ssl
             },
-            "cluster_id": self._args.cluster_id,
-            "db_init_params": {
-                "cassandra_user": self._args.cassandra_user,
-                "cassandra_password": self._args.cassandra_password,
-                "cassandra_server_list": self._args.cassandra_server_list,
-                "cassandra_use_ssl": self._args.cassandra_use_ssl,
-                "cassandra_ca_certs":self._args.cassandra_ca_certs
-            }
+            "cluster_id": self._args.cluster_id
         }
         return job_input_json
 
@@ -165,7 +162,8 @@ class JobHandler(object):
     def _handle_job_status_change_notification(self, body, message):
         try:
             message.ack()
-            self._job_status = JobStatus.from_str(body.job_status)
+            payload = AttrDict(body)
+            self._job_status = JobStatus.from_str(payload.job_status)
         except Exception as e:
             msg = "Exception while handling the job status update " \
                   "notification %s " % repr(e)

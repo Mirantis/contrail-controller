@@ -64,6 +64,10 @@ class FilterLog(object):
             self._msg = None
     # end msg_end
 
+    def msg_info(self, msg):
+        self._logger.info(msg)
+    # end msg_error
+
     def msg_error(self, msg):
         self._logger.error(msg)
     # end msg_error
@@ -97,6 +101,11 @@ def _task_done(msg=None):
 # end _task_done
 
 
+def _task_info_log(msg):
+    FilterLog.instance().msg_info(msg)
+# end _task_info_log
+
+
 def _task_error_log(msg):
     FilterLog.instance().msg_error(msg)
 # end _task_error_log
@@ -112,3 +121,32 @@ def _task_warn_log(msg):
 # end _task_warn_log
 
 
+# Get list of VNC objects given a object UUID list or parent UUID list
+def vnc_bulk_get(vnc_api, obj_name, obj_uuids=None, parent_uuids=None,
+                 fields=None):
+    # search using object uuid list or parent uuid list
+    chunk_size = 20
+    obj_list = []
+    chunk_idx = 0
+
+    if obj_uuids and parent_uuids or obj_uuids and not parent_uuids:
+        search_by_obj = True
+        uuid_list = obj_uuids
+        num_uuids = len(obj_uuids)
+    elif parent_uuids:
+        search_by_obj = False
+        uuid_list = parent_uuids
+        num_uuids = len(parent_uuids)
+    else:
+        return []
+
+    while chunk_idx < num_uuids:
+        chunk_uuids = uuid_list[chunk_idx:chunk_idx+chunk_size]
+        chunk_obj_list = getattr(vnc_api, obj_name +"_list")(
+            obj_uuids=chunk_uuids if search_by_obj else None,
+            parent_id=chunk_uuids if not search_by_obj else None,
+            fields=fields).get(obj_name.replace('_', '-'))
+        obj_list += chunk_obj_list
+        chunk_idx += chunk_size
+    return obj_list
+# end vnc_bulk_get

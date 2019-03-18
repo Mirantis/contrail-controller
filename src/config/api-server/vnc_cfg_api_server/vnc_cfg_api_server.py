@@ -80,7 +80,7 @@ import context
 from context import get_request, get_context, set_context, use_context
 from context import ApiContext
 from context import is_internal_request
-import vnc_cfg_types
+from resources import initialize_all_server_resource_classes
 from vnc_db import VncDbClient
 
 import cfgm_common
@@ -264,7 +264,7 @@ class VncApiServer(object):
             attr_type = attr_type_vals['attr_type']
             restrictions = attr_type_vals['restrictions']
             is_array = attr_type_vals.get('is_array', False)
-            if value is None:
+            if not value:
                 continue
             if is_array:
                 if not isinstance(value, list):
@@ -278,14 +278,31 @@ class VncApiServer(object):
                 for item in values:
                     if attr_type == 'AllowedAddressPair':
                         cls._validate_allowed_address_pair_prefix_len(item)
+                    if attr_type == 'SubnetType':
+                        cls._validate_subnet_type(item)
                     cls._validate_complex_type(attr_cls, item)
             else:
                 simple_type = attr_type_vals['simple_type']
-                for item in values:
-                    cls._validate_simple_type(key, attr_type,
-                                              simple_type, item,
-                                              restrictions)
+                for idx, item in enumerate(values):
+                    values[idx] = cls._validate_simple_type(key, attr_type,
+                                                            simple_type, item,
+                                                            restrictions)
+            if not is_array:
+                dict_body[key] = values[0]
     # end _validate_complex_type
+
+    @staticmethod
+    def _validate_subnet_type(subnet):
+        try:
+            cidr_str = '%s/%s' % (subnet['ip_prefix'], subnet['ip_prefix_len'])
+        except TypeError:
+            raise ValueError("Subnet type is invalid")
+        try:
+            cidr = netaddr.IPNetwork(cidr_str)
+        except netaddr.core.AddrFormatError:
+            raise ValueError("Subnet type '%s' is invalid" % cidr_str)
+        subnet['ip_prefix'] = str(cidr.network)
+        subnet['ip_prefix_len'] = cidr.prefixlen
 
     @classmethod
     def _validate_allowed_address_pair_prefix_len(cls, value):
@@ -441,6 +458,10 @@ class VncApiServer(object):
             auth_token = get_request().get_header('X-Auth-Token')
             request_params['auth_token'] = auth_token
 
+            # get cluster id
+            contrail_cluster_id = get_request().get_header('X-Cluster-ID')
+            request_params['contrail_cluster_id'] = contrail_cluster_id
+
             # get the API config node ip list
             if not self._config_node_list:
                 (ok, cfg_node_list, _) = self._db_conn.dbe_list(
@@ -524,11 +545,11 @@ class VncApiServer(object):
             headers (Type dict): headers for the message
             payload (Type object): the message
         '''
-        self.config_log("Entered amqp-response",
+        self.config_log("Entered amqp-request",
                         level=SandeshLevel.SYS_INFO)
 
         body = get_request().json
-        msg = "Amqp response %s " % json.dumps(body)
+        msg = "Amqp request %s " % json.dumps(body)
         self.config_log(msg, level=SandeshLevel.SYS_DEBUG)
 
         if self._amqp_client.get_exchange(body.get('exchange')) is None:
@@ -553,6 +574,9 @@ class VncApiServer(object):
         finally:
             self._amqp_client.remove_consumer(consumer)
 
+        msg = "Amqp response, status %s, body %s " % (bottle.response.status,
+            json.dumps(amqp_worker.body))
+        self.config_log(msg, level=SandeshLevel.SYS_DEBUG)
         return amqp_worker.body
     # end amqp_request_http_post
 
@@ -1041,7 +1065,11 @@ class VncApiServer(object):
         # Generate field list for db layer
         obj_fields = r_class.prop_fields | r_class.ref_fields
         if 'fields' in get_request().query:
-            obj_fields |= set(get_request().query.fields.split(','))
+            obj_fields = set(get_request().query.fields.split(',')) & (
+                obj_fields |
+                r_class.backref_fields |
+                r_class.children_fields
+                ) | set(['id_perms', 'perms2'])
         else: # default props + children + refs + backrefs
             if 'exclude_back_refs' not in get_request().query:
                 obj_fields |= r_class.backref_fields
@@ -1744,7 +1772,7 @@ class VncApiServer(object):
 
     def __init__(self, args_str=None):
         self._db_conn = None
-        self._resource_classes = {}
+        self._resource_classes = initialize_all_server_resource_classes(self)
         self._args = None
         self._path_prefix = _DEFAULT_ZK_COUNTER_PATH_PREFIX
         self.quota_counter = {}
@@ -1767,9 +1795,11 @@ class VncApiServer(object):
             self.aaa_mode = "cloud-admin" if self._args.multi_tenancy else "no-auth"
         else:
             self.aaa_mode = "cloud-admin"
-
-        self._base_url = "http://%s:%s" % (self._args.listen_ip_addr,
-                                           self._args.listen_port)
+        
+        api_proto = 'https' if self._args.config_api_ssl_enable else 'http'
+        api_host_name = socket.getfqdn(self._args.listen_ip_addr)
+        self._base_url = "%s://%s:%s" % (api_proto, api_host_name,
+                                        self._args.listen_port)
 
         # Generate LinkObjects for all entities
         links = []
@@ -2023,7 +2053,7 @@ class VncApiServer(object):
                 ssl_ca_certs=self._args.kombu_ssl_ca_certs
             )
             amqp_client = KombuAmqpClient(self.config_log, rabbitmq_cfg,
-                                          heartbeat=10)
+                heartbeat=self.get_rabbit_health_check_interval())
             amqp_client.add_exchange(self.JOB_REQUEST_EXCHANGE, type="direct")
             amqp_client.run()
         except Exception as e:
@@ -2819,6 +2849,8 @@ class VncApiServer(object):
                         'pre_%s_read_fqname' %(obj_type), fq_name)
                     id = self._db_conn.fq_name_to_uuid(obj_type, fq_name)
                 except Exception as e:
+                    self.config_log("fq_name_to_id_http_post error: " + str(e),
+                                    level=SandeshLevel.SYS_DEBUG)
                     raise cfgm_common.exceptions.HttpError(
                         404, 'Name ' + pformat(fq_name) + ' not found')
             else:
@@ -2923,30 +2955,10 @@ class VncApiServer(object):
     # end get_profile_info
 
     def get_resource_class(self, type_str):
-        if type_str in self._resource_classes:
-            return self._resource_classes[type_str]
-
-        common_name = cfgm_common.utils.CamelCase(type_str)
-        server_name = '%sServer' % common_name
         try:
-            resource_class = getattr(vnc_cfg_types, server_name)
-        except AttributeError:
-            common_class = cfgm_common.utils.str_to_class(common_name,
-                                                          __name__)
-            if common_class is None:
-                raise TypeError('Invalid type: ' + type_str)
-            # Create Placeholder classes derived from Resource, <Type> so
-            # resource_class methods can be invoked in CRUD methods without
-            # checking for None
-            resource_class = type(
-                str(server_name),
-                (vnc_cfg_types.Resource, common_class, object),
-                {})
-        resource_class.server = self
-        self._resource_classes[resource_class.object_type] = resource_class
-        self._resource_classes[resource_class.resource_type] = resource_class
-        return resource_class
-    # end get_resource_class
+            return self._resource_classes[type_str]
+        except KeyError:
+            raise TypeError('Invalid Contrail resource type: %s' % type_str)
 
     def list_bulk_collection_http_post(self):
         """ List collection when requested ids don't fit in query params."""
@@ -3068,20 +3080,23 @@ class VncApiServer(object):
     def _load_extensions(self):
         try:
             conf_sections = self._args.config_sections
-            if self._args.auth != 'no-auth':
-                self._extension_mgrs['resync'] = ExtensionManager(
-                    'vnc_cfg_api.resync', api_server_ip=self._args.listen_ip_addr,
-                    api_server_port=self._args.listen_port,
-                    conf_sections=conf_sections, sandesh=self._sandesh)
+            hostname = socket.getfqdn(self._args.listen_ip_addr)
             self._extension_mgrs['resourceApi'] = ExtensionManager(
                 'vnc_cfg_api.resourceApi',
                 propagate_map_exceptions=True,
-                api_server_ip=self._args.listen_ip_addr,
+                api_server_ip=hostname,
                 api_server_port=self._args.listen_port,
                 conf_sections=conf_sections, sandesh=self._sandesh)
+            if self._args.auth != 'no-auth':
+                self._extension_mgrs['resync'] = ExtensionManager(
+                    'vnc_cfg_api.resync', api_server_ip=hostname,
+                    api_server_port=self._args.listen_port,
+                    conf_sections=conf_sections, sandesh=self._sandesh)
+                self._extension_mgrs['resourceApi'].map_method(
+                    'set_resync_extension_manager', self._extension_mgrs['resync'])
             self._extension_mgrs['neutronApi'] = ExtensionManager(
                 'vnc_cfg_api.neutronApi',
-                api_server_ip=self._args.listen_ip_addr,
+                api_server_ip=hostname,
                 api_server_port=self._args.listen_port,
                 conf_sections=conf_sections, sandesh=self._sandesh,
                 api_server_obj=self)
@@ -3314,6 +3329,7 @@ class VncApiServer(object):
         gvc = self.create_singleton_entry(GlobalVrouterConfig(
             parent_obj=gsc))
         self.create_singleton_entry(Domain())
+        self.create_singleton_entry(Fabric())
 
         # Global and default policy resources
         pm = self.create_singleton_entry(PolicyManagement())
@@ -3709,7 +3725,7 @@ class VncApiServer(object):
         type_str = obj_dict['tag_type_name']
         value_str = obj_dict['tag_value']
 
-        ok, result = vnc_cfg_types.TagTypeServer.locate(
+        ok, result = self.get_resource_class('tag_type').locate(
             [type_str], id_perms=IdPermsType(user_visible=False))
         tag_type = result
         obj_dict['tag_type_refs'] = [
@@ -3721,8 +3737,9 @@ class VncApiServer(object):
 
         # Allocate ID for tag value. Use the all fq_name to distinguish same
         # tag values between global and scoped
-        value_id = vnc_cfg_types.TagServer.vnc_zk_client.alloc_tag_value_id(
-            type_str, ':'.join(obj_dict['fq_name']))
+        value_id = self.get_resource_class(
+            'tag').vnc_zk_client.alloc_tag_value_id(
+                type_str, ':'.join(obj_dict['fq_name']))
 
         # Compose Tag ID with the type ID and value ID
         obj_dict['tag_id'] = "{}{:04x}".format(tag_type['tag_type_id'],
@@ -4432,7 +4449,7 @@ class VncApiServer(object):
         subnet = req_dict.get('subnet')
         family = req_dict.get('family')
         try:
-            result = vnc_cfg_types.VirtualNetworkServer.ip_alloc(
+            result = self.get_resource_class('virtual_network').ip_alloc(
                 vn_fq_name, subnet, count, family)
         except vnc_addr_mgmt.AddrMgmtSubnetUndefined as e:
             raise cfgm_common.exceptions.HttpError(404, str(e))
@@ -4459,7 +4476,7 @@ class VncApiServer(object):
 
         req_dict = get_request().json
         ip_list = req_dict['ip_addr'] if 'ip_addr' in req_dict else []
-        result = vnc_cfg_types.VirtualNetworkServer.ip_free(
+        result = self.get_resource_class('virtual_network').ip_free(
             vn_fq_name, ip_list)
         return result
     # end vn_ip_free_http_post
@@ -4487,7 +4504,7 @@ class VncApiServer(object):
         obj_dict = result
         subnet_list = req_dict[
             'subnet_list'] if 'subnet_list' in req_dict else []
-        result = vnc_cfg_types.VirtualNetworkServer.subnet_ip_count(
+        result = self.get_resource_class('virtual_network').subnet_ip_count(
             vn_fq_name, subnet_list)
         return result
     # end vn_subnet_ip_count_http_post

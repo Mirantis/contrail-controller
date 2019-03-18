@@ -30,11 +30,10 @@ job_ctx:
   config_args: "{{ playbook_input.args }}"
   job_input: "{{ playbook_input.input }}"
   auth_token: "{{ playbook_input.auth_token }}"
+  contrail_cluster_id: "{{ playbook_input.contrail_cluster_id if playbook_input.contrail_cluster_id is defined else None }}"
   api_server_host: "{{ playbook_input.api_server_host }}"
   playbook_job_percentage: "{{ playbook_input.playbook_job_percentage}}"
   vnc_api_init_params: "{{ playbook_input.vnc_api_init_params }}"
-  cluster_id: "{{ playbook_input.cluster_id }}"
-  db_init_params: "{{ playbook_input.db_init_params }}"
   # This is used to demarcate the marked outputs from playbooks to the common
   # file
   unique_pb_id: "{{ playbook_input.unique_pb_id }}"
@@ -56,8 +55,6 @@ POOL_SIZE: 500
 
 #Device Retry Timeout in Seconds
 TOTAL_RETRY_TIMEOUT: 3600
-
-TFTP_SERVER: "{{ lookup('env', 'TFTP_NODE') }}"
 
 #vendor mapping
 vendor_mapping:
@@ -99,6 +96,7 @@ role_to_feature_mapping:
   CRB-Access@leaf:
     - basic
     - underlay_ip_clos
+    - underlay_infra_bms_access
     - overlay_bgp
     - overlay_evpn
     - overlay_evpn_access
@@ -108,9 +106,10 @@ role_to_feature_mapping:
   ERB-UCAST-Gateway@leaf:
     - basic
     - underlay_ip_clos
+    - underlay_infra_bms_access
     - overlay_bgp
     - overlay_evpn
-    - overlay_evpn_access
+    - overlay_evpn_erb_access
     - overlay_evpn_type5
     - overlay_evpn_ucast_gateway
     - overlay_security_group
@@ -119,6 +118,7 @@ role_to_feature_mapping:
   CRB-Gateway@leaf:
     - basic
     - underlay_ip_clos
+    - underlay_infra_bms_access
     - overlay_bgp
     - overlay_evpn
     - overlay_evpn_gateway
@@ -127,11 +127,13 @@ role_to_feature_mapping:
   null@spine:
     - basic
     - underlay_ip_clos
+    - underlay_infra_bms_access
     - overlay_bgp
     - overlay_networking
   CRB-Access@spine:
     - basic
     - underlay_ip_clos
+    - underlay_infra_bms_access
     - overlay_bgp
     - overlay_evpn
     - overlay_evpn_access
@@ -141,6 +143,7 @@ role_to_feature_mapping:
   CRB-Gateway@spine:
     - basic
     - underlay_ip_clos
+    - underlay_infra_bms_access
     - overlay_bgp
     - overlay_evpn
     - overlay_evpn_gateway
@@ -149,6 +152,7 @@ role_to_feature_mapping:
   CRB-MCAST-Gateway@spine:
     - basic
     - underlay_ip_clos
+    - underlay_infra_bms_access
     - overlay_bgp
     - overlay_evpn
     - overlay_evpn_gateway
@@ -161,6 +165,7 @@ role_to_feature_mapping:
   DC-Gateway@leaf:
     - basic
     - underlay_ip_clos
+    - underlay_infra_bms_access
     - overlay_bgp
     - overlay_networking
     - overlay_fip_snat
@@ -170,6 +175,7 @@ role_to_feature_mapping:
   DC-Gateway@spine:
     - basic
     - underlay_ip_clos
+    - underlay_infra_bms_access
     - overlay_bgp
     - overlay_networking
     - overlay_fip_snat
@@ -179,6 +185,7 @@ role_to_feature_mapping:
   DCI-Gateway@leaf:
     - basic
     - underlay_ip_clos
+    - underlay_infra_bms_access
     - overlay_bgp
     - overlay_networking
     - overlay_fip_snat
@@ -188,6 +195,7 @@ role_to_feature_mapping:
   DCI-Gateway@spine:
     - basic
     - underlay_ip_clos
+    - underlay_infra_bms_access
     - overlay_bgp
     - overlay_networking
     - overlay_fip_snat
@@ -197,10 +205,38 @@ role_to_feature_mapping:
   Route-Reflector@spine:
     - basic
     - underlay_ip_clos
+    - underlay_infra_bms_access
     - overlay_bgp
+  Route-Reflector@leaf:
+    - basic
+    - underlay_ip_clos
+    - underlay_infra_bms_access
+    - overlay_bgp
+  CRB-MCAST-Gateway@leaf:
+    - basic
+    - underlay_ip_clos
+    - underlay_infra_bms_access
+    - overlay_bgp
+    - overlay_evpn
+    - overlay_evpn_gateway
+    - overlay_evpn_type5
+    - overlay_evpn_mcast_gateway
+    - overlay_security_group
+    - overlay_lag
+    - overlay_multi_homing
+    - overlay_networking
+  PNF-Servicechain@leaf:
+    - overlay_service_chain
+    - overlay_pim
+  PNF-Servicechain@spine:
+    - overlay_pim
+    - overlay_service_chain
+  PNF-Servicechain@pnf:
+    - overlay_pim
+    - overlay_service_chain
 
 DEVICE_FACTS_TIMEOUT: 120
-DEVICE_COMMAND_TIMEOUT: 120
+DEVICE_COMMAND_TIMEOUT: 600
 
 # Server Discovery test variables
 ipmi_subnets:

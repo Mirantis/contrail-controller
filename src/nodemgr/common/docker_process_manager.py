@@ -3,7 +3,6 @@
 #
 
 import docker
-import gevent
 import time
 
 from docker_mem_cpu import DockerMemCpuUsageData
@@ -78,6 +77,8 @@ class DockerProcessInfoManager(object):
         self._update_process_list = update_process_list
         self._process_info_cache = cpm.ProcessInfoCache()
         self._client = docker.from_env()
+        if hasattr(self._client, 'api'):
+            self._client = self._client.api
 
     def _get_full_info(self, cid):
         try:
@@ -191,11 +192,8 @@ class DockerProcessInfoManager(object):
             self._process_info_cache.update_cache(info)
         return processes_info_list
 
-    def runforever(self):
-        # TODO: probably use subscription on events..
-        while True:
-            self._poll_containers()
-            gevent.sleep(seconds=5)
+    def run_job(self):
+        self._poll_containers()
 
     def get_mem_cpu_usage_data(self, pid, last_cpu, last_time):
         return DockerMemCpuUsageData(pid, last_cpu, last_time)
@@ -219,6 +217,14 @@ class DockerProcessInfoManager(object):
                 res += part
         finally:
             if socket:
+                # There is cyclic reference there
+                # https://github.com/docker/docker-py/blob/master/docker/api/client.py#L321
+                # sock => response => socket
+                # https://github.com/docker/docker-py/issues/2137
+                try:
+                    socket._response = None
+                except AttributeError:
+                    pass
                 socket.close()
         data = self._client.exec_inspect(exec_op["Id"])
         exit_code = data.get("ExitCode", 0)

@@ -137,9 +137,12 @@ alarm_list = [
         "uve_keys": {
             "uve_key": [
                 "analytics-node",
+                "analytics-alarm-node",
+                "analytics-snmp-node",
                 "config-node",
                 "control-node",
                 "database-node",
+                "config-database-node",
                 "vrouter"
             ]
         }
@@ -174,9 +177,12 @@ alarm_list = [
         "uve_keys": {
             "uve_key": [
                 "analytics-node",
+                "analytics-alarm-node",
+                "analytics-snmp-node",
                 "config-node",
                 "control-node",
                 "database-node",
+                "config-database-node",
                 "vrouter"
             ]
         }
@@ -211,9 +217,12 @@ alarm_list = [
         "uve_keys": {
             "uve_key": [
                 "analytics-node",
+                "analytics-alarm-node",
+                "analytics-snmp-node",
                 "config-node",
                 "control-node",
                 "database-node",
+                "config-database-node",
                 "vrouter"
             ]
         }
@@ -246,9 +255,12 @@ alarm_list = [
         "uve_keys": {
             "uve_key": [
                 "analytics-node",
+                "analytics-alarm-node",
+                "analytics-snmp-node",
                 "config-node",
                 "control-node",
                 "database-node",
+                "config-database-node",
                 "vrouter"
             ]
         }
@@ -281,9 +293,12 @@ alarm_list = [
         "uve_keys": {
             "uve_key": [
                 "analytics-node",
+                "analytics-alarm-node",
+                "analytics-snmp-node",
                 "config-node",
                 "control-node",
                 "database-node",
+                "config-database-node",
                 "vrouter"
             ]
         }
@@ -329,9 +344,12 @@ alarm_list = [
         "uve_keys": {
             "uve_key": [
                 "analytics-node",
+                "analytics-alarm-node",
+                "analytics-snmp-node",
                 "config-node",
                 "control-node",
                 "database-node",
+                "config-database-node",
                 "vrouter"
             ]
         }
@@ -376,9 +394,12 @@ alarm_list = [
         "uve_keys": {
             "uve_key": [
                 "analytics-node",
+                "analytics-alarm-node",
+                "analytics-snmp-node",
                 "config-node",
                 "control-node",
                 "database-node",
+                "config-database-node",
                 "vrouter"
             ]
         }
@@ -673,9 +694,12 @@ alarm_list = [
         "uve_keys": {
             "uve_key": [
                 "analytics-node",
+                "analytics-alarm-node",
+                "analytics-snmp-node",
                 "config-node",
                 "control-node",
                 "database-node",
+                "config-database-node",
                 "vrouter"
             ]
         }
@@ -708,6 +732,7 @@ alarm_list = [
         "uve_keys": {
             "uve_key": [
                 "database-node"
+                "config-database-node",
             ]
         }
     },
@@ -740,9 +765,12 @@ alarm_list = [
         "uve_keys": {
             "uve_key": [
                 "analytics-node",
+                "analytics-alarm-node",
+                "analytics-snmp-node",
                 "config-node",
                 "control-node",
                 "database-node",
+                "config-database-node",
                 "vrouter"
             ]
         }

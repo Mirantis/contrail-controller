@@ -20,7 +20,10 @@
 #include <port_ipc/port_subscribe_table.h>
 
 #define LOGICAL_ROUTER_NAME "logical-router"
+#define VIRTUAL_PORT_GROUP_CONFIG_NAME "virtual-port-group"
+
 #define VMI_NETWORK_ROUTER_INTERFACE "network:router_interface"
+
 using namespace std;
 using namespace boost::uuids;
 using namespace autogen;
@@ -344,24 +347,44 @@ static void BuildResolveRoute(VmInterfaceConfigData *data, IFMapNode *node) {
     }
 }
 
+// Check if VMI is a sub-interface. Sub-interface will have
+// sub_interface_vlan_tag property set to non-zero
+static bool IsVlanSubInterface(VirtualMachineInterface *cfg) {
+    if (cfg->IsPropertySet(VirtualMachineInterface::PROPERTIES) == false)
+        return false;
+
+    if (cfg->properties().sub_interface_vlan_tag == 0)
+        return false;
+
+    return true;
+}
+
 // Get VLAN if linked to physical interface and router
 static void BuildInterfaceConfigurationData(Agent *agent,
-                                            VmInterfaceConfigData *data,
                                             IFMapNode *node,
                                             uint16_t *rx_vlan_id,
                                             uint16_t *tx_vlan_id,
+                                            IFMapNode **li_node,
                                             IFMapNode **phy_interface,
                                             IFMapNode **phy_device) {
+    if (*li_node == NULL) {
+        *li_node = node;
+    }
+
     if (*phy_interface == NULL) {
         *phy_interface = agent->config_manager()->
             FindAdjacentIFMapNode(node, "physical-interface");
+        // Update li_node if phy_interface is set
+        if (*phy_interface) {
+            *li_node = node;
+        }
     }
-
     if (!(*phy_interface)) {
         *rx_vlan_id = VmInterface::kInvalidVlanId;
         *tx_vlan_id = VmInterface::kInvalidVlanId;
         return;
     }
+
     if (*phy_device == NULL) {
         *phy_device =
             agent->config_manager()->
@@ -378,6 +401,43 @@ static void BuildInterfaceConfigurationData(Agent *agent,
     if (port->IsPropertySet(autogen::LogicalInterface::VLAN_TAG)) {
         *rx_vlan_id = port->vlan_tag();
         *tx_vlan_id = port->vlan_tag();
+    }
+}
+
+static void BuildInterfaceConfigurationDataFromVpg(Agent *agent,
+                                            IFMapNode *node,
+                                            IFMapNode **vpg_node,
+                                            IFMapNode **phy_interface,
+                                            IFMapNode **phy_device) {
+    if (*vpg_node == NULL) {
+        *vpg_node = node;
+    }
+
+    IFMapNode *vpg_pi_node = agent->config_manager()->
+        FindAdjacentIFMapNode(node, "virtual-port-group-physical-interface");
+    if (vpg_pi_node == NULL) {
+        return;
+    }
+
+    if (*phy_interface == NULL) {
+        *phy_interface = agent->config_manager()->
+            FindAdjacentIFMapNode(vpg_pi_node, "physical-interface");
+        // Update vpg_node if phy_interface is present
+        if (*phy_interface) {
+            *vpg_node = node;
+        }
+    }
+    if (*phy_interface == NULL) {
+            return;
+    }
+
+    if (*phy_device == NULL) {
+        *phy_device =
+            agent->config_manager()->
+            FindAdjacentIFMapNode(*phy_interface, "physical-router");
+    }
+    if (*phy_device == NULL) {
+            return;
     }
 }
 
@@ -1239,50 +1299,45 @@ static void ReadDhcpEnable(Agent *agent, VmInterfaceConfigData *data,
     }
 }
 
-// Check if VMI is a sub-interface. Sub-interface will have
-// sub_interface_vlan_tag property set to non-zero
-static bool IsVlanSubInterface(VirtualMachineInterface *cfg) {
-    if (cfg->IsPropertySet(VirtualMachineInterface::PROPERTIES) == false)
-        return false;
-
-    if (cfg->properties().sub_interface_vlan_tag == 0)
-        return false;
-
-    return true;
-}
-
 // Builds parent for VMI (not to be confused with parent ifmap-node)
 // Possible values are,
-// - logical-interface : Incase of baremetals
+// - logical-interface or virtual-port-group : Incase of baremetals
+//   logical-interface would be examined before virtual-port-group
 // - virtual-machine-interface : We support virtual-machine-interface
 //   sub-interfaces. In this case, another virtual-machine-interface itself
 //   can be a parent
 static PhysicalRouter *BuildParentInfo(Agent *agent,
-                                       VmInterfaceConfigData *data,
                                        VirtualMachineInterface *cfg,
                                        IFMapNode *node,
                                        IFMapNode *logical_node,
+                                       IFMapNode *vpg_node,
+                                       VmInterfaceConfigData *data,
                                        IFMapNode *parent_vmi_node,
                                        IFMapNode **phy_interface,
                                        IFMapNode **phy_device) {
     if (logical_node) {
-        if ((*phy_interface) == NULL) {
-            *phy_interface = agent->config_manager()->
-                FindAdjacentIFMapNode(logical_node, "physical-interface");
+        if (*phy_interface) {
+            data->physical_interface_ = (*phy_interface)->name();
         }
         agent->interface_table()->
            LogicalInterfaceIFNodeToUuid(logical_node, data->logical_interface_);
-        // Find phyiscal-interface for the VMI
+        if ((*phy_device) == NULL) {
+            return NULL;
+        }
+        return static_cast<PhysicalRouter *>((*phy_device)->GetObject());
+    }
+
+    if (vpg_node) {
         if (*phy_interface) {
             data->physical_interface_ = (*phy_interface)->name();
-            // Find vrouter for the physical interface
-            if ((*phy_device) == NULL) {
-                *phy_device = agent->config_manager()->
-                    FindAdjacentIFMapNode(*phy_interface, "physical-router");
-            }
         }
-        if ((*phy_device) == NULL)
+        if (IsVlanSubInterface(cfg) == true) {
+            data->rx_vlan_id_ = cfg->properties().sub_interface_vlan_tag;
+            data->tx_vlan_id_ = cfg->properties().sub_interface_vlan_tag;
+        }
+        if ((*phy_device) == NULL) {
             return NULL;
+        }
         return static_cast<PhysicalRouter *>((*phy_device)->GetObject());
     }
 
@@ -1346,18 +1401,25 @@ static void ReadIgmpConfig(Agent *agent, const IFMapNode *vn_node,
                             VmInterfaceConfigData *data) {
 
     const VirtualNetwork *vn = NULL;
+    bool igmp_enabled = false;
+
     if (vn_node) {
         vn = static_cast<const VirtualNetwork *>(vn_node->GetObject());
     }
 
-    if (cfg->IsPropertySet(VirtualMachineInterface::IGMP_ENABLE)) {
-        data->igmp_enabled_ = data->cfg_igmp_enable_ = cfg->igmp_enable();
-    } else if (vn && vn->IsPropertySet(VirtualNetwork::IGMP_ENABLE)) {
-        data->igmp_enabled_ = vn->igmp_enable();
-    } else {
-        data->igmp_enabled_ =
+    if (cfg) igmp_enabled = cfg->igmp_enable();
+
+    if (vn && !igmp_enabled) igmp_enabled = vn->igmp_enable();
+
+    if (!igmp_enabled) {
+        igmp_enabled =
                     agent->oper_db()->global_system_config()->cfg_igmp_enable();
     }
+
+    data->cfg_igmp_enable_ = cfg->igmp_enable();
+    data->igmp_enabled_ = igmp_enabled;
+
+    return;
 }
 
 // max_flows is read from vmi properties preferentially , else vn properties
@@ -1574,6 +1636,7 @@ bool InterfaceTable::VmiProcessConfig(IFMapNode *node, DBRequest &req,
     IFMapAgentTable *table = static_cast<IFMapAgentTable *>(node->table());
     IFMapNode *vn_node = NULL;
     IFMapNode *li_node = NULL;
+    IFMapNode *vpg_node = NULL;
     IFMapNode *lr_node = NULL;
     IFMapNode *phy_interface = NULL;
     IFMapNode *phy_device = NULL;
@@ -1675,18 +1738,10 @@ bool InterfaceTable::VmiProcessConfig(IFMapNode *node, DBRequest &req,
         }
 
         if (adj_node->table() == agent_->cfg()->cfg_logical_port_table()) {
-            li_node = adj_node;
-            BuildInterfaceConfigurationData(agent(), data, adj_node,
+            BuildInterfaceConfigurationData(agent(), adj_node,
                                             &rx_vlan_id, &tx_vlan_id,
-                                            &phy_interface, &phy_device);
-        }
-
-        if (adj_node->table() == agent_->cfg()->cfg_vm_interface_table()) {
-            parent_vmi_node = adj_node;
-        }
-
-        if (adj_node->table() == agent_->cfg()->cfg_logical_port_table()) {
-            li_node = adj_node;
+                                            &li_node, &phy_interface,
+                                            &phy_device);
         }
 
         if (adj_node->table() == agent_->cfg()->cfg_vm_interface_table()) {
@@ -1716,6 +1771,14 @@ bool InterfaceTable::VmiProcessConfig(IFMapNode *node, DBRequest &req,
             if (BuildLogicalRouterData(agent_, data, node)) {
                 lr_node = adj_node;
             }
+        }
+
+        if (strcmp(adj_node->table()->Typename(),
+                VIRTUAL_PORT_GROUP_CONFIG_NAME) == 0) {
+            BuildInterfaceConfigurationDataFromVpg(agent(), adj_node,
+                                                   &vpg_node,
+                                                   &phy_interface,
+                                                   &phy_device);
         }
     }
 
@@ -1755,8 +1818,8 @@ bool InterfaceTable::VmiProcessConfig(IFMapNode *node, DBRequest &req,
 
     PhysicalRouter *prouter = NULL;
     // Build parent for the virtual-machine-interface
-    prouter = BuildParentInfo(agent_, data, cfg, node, li_node,
-                              parent_vmi_node, &phy_interface,
+    prouter = BuildParentInfo(agent_, cfg, node, li_node, vpg_node,
+                              data, parent_vmi_node, &phy_interface,
                               &phy_device);
     BuildEcmpHashingIncludeFields(cfg, vn_node, data);
 

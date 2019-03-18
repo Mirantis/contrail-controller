@@ -34,6 +34,7 @@ for file in setup_sources:
         env.Install(Dir('.'), "#controller/src/config/fabric-ansible/ansible-playbooks/" + file))
 
 local_sources = [
+    'assign_static_device_ip.yml',
     'delete_fabric.yml',
     'delete_fabric_devices.yml',
     'device_import.yml',
@@ -50,7 +51,6 @@ local_sources = [
     'postscript.yml',
     'ztp.yml',
     'fabric_config.yml',
-    'feature_config.yml',
     'role_assignment.yml',
     'percentage_update.yml',
     'operational_command.yml',
@@ -59,6 +59,8 @@ local_sources = [
     'node_profile.yml',
     'plugin_ironic.yml',
     'server_import.yml',
+    'hitless_upgrade_errors.yml',
+    'update_dhcp_config.yml',
 ]
 
 local_sources_rules = []

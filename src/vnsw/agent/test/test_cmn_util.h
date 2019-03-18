@@ -82,10 +82,7 @@ void DelXmlHdr(char *buff, int &len);
 void DelXmlTail(char *buff, int &len);
 void AddXmlHdr(char *buff, int &len);
 void AddXmlTail(char *buff, int &len);
-void AddLinkString(char *buff, int &len, const char *node_name1,
-                   const char *name1, const char *node_name2, const char *name2,
-                   const char *metadata = NULL);
-void DelLinkString(char *buff, int &len, const char *node_name1,
+void LinkString(char *buff, int &len, const char *node_name1,
                    const char *name1, const char *node_name2, const char *name2,
                    const char* mdata = NULL);
 void AddNodeString(char *buff, int &len, const char *node_name, const char *name,
@@ -99,8 +96,7 @@ void AddNodeString(char *buff, int &len, const char *nodename, const char *name,
 void AddVmPortVrfNodeString(char *buff, int &len, const char *name, int id);
 void DelNodeString(char *buff, int &len, const char *node_name, const char *name);
 void ApplyXmlString(const char *buff);
-string GetMetadata(const char *node1, const char *node2,
-                   const char *mdata = NULL);
+const char *GetMetadata(const char *node1, const char *node2);
 void AddLink(const char *node_name1, const char *name1, const char *node_name2,
              const char *name2, const char *mdata = NULL);
 void DelLink(const char *node_name1, const char *name1, const char *node_name2,
@@ -274,6 +270,16 @@ bool EcmpTunnelRouteAdd(Agent *agent, const BgpPeer *peer, const string &vrf_nam
                         const string &remote_server_1, uint32_t label1,
                         const string &remote_server_2, uint32_t label2,
                         const string &vn);
+bool MplsVpnEcmpTunnelAdd(const BgpPeer *peer, const string &vrf,
+                        const Ip4Address &prefix, uint8_t plen,
+                        Ip4Address &remote_server_1, uint32_t label1,
+                        Ip4Address &remote_server_2, uint32_t label2,
+                        const string &vn);
+bool MplsLabelInetEcmpTunnelAdd(const BgpPeer *peer, const string &vrf,
+                        const Ip4Address &prefix, uint8_t plen,
+                        Ip4Address &remote_server_1, uint32_t label1,
+                        Ip4Address &remote_server_2, uint32_t label2,
+                        const string &vn);
 bool BridgeTunnelRouteAdd(const BgpPeer *peer, const string &vm_vrf,
                           TunnelType::TypeBmap bmap, const Ip4Address &server_ip,
                           uint32_t label, MacAddress &remote_vm_mac,
@@ -319,6 +325,7 @@ bool Inet4MplsRouteAdd(const BgpPeer *peer, const string &vm_vrf, char *vm_addr,
 bool TunnelRouteAdd(const char *server, const char *vmip, const char *vm_vrf,
                     int label, const char *vn);
 bool AddArp(const char *ip, const char *mac_str, const char *ifname);
+bool AddArpReq(const char *ip, const char *ifname);
 bool DelArp(const string &ip, const char *mac_str, const string &ifname);
 void *asio_poll(void *arg);
 void AsioRun();
@@ -381,6 +388,9 @@ void AddVDNS(const char *vdns_name, const char *vdns_attr);
 void DelVDNS(const char *vdns_name);
 void AddEncryptRemoteTunnelConfig(const EncryptTunnelEndpoint *endpoints, int count,
                                 std::string encrypt_mode);
+void AddMulticastPolicy(const char *name, uint32_t id, MulticastPolicy *msg,
+                                int msg_size);
+void DelMulticastPolicy(const char *name);
 void AddLinkLocalConfig(const TestLinkLocalService *services, int count);
 void DelLinkLocalConfig();
 void DeleteGlobalVrouterConfig();
@@ -663,6 +673,8 @@ void AddPhysicalInterface(const char *name, int id, const char* display_name);
 void DeletePhysicalInterface(const char *name);
 void AddLogicalInterface(const char *name, int id, const char* display_name, int vlan = 0);
 void DeleteLogicalInterface(const char *name);
+void AddVirtualPortGroup(const char *name, int id, const char *display_name);
+void DeleteVirtualPortGroup(const char *name);
 PhysicalDevice *PhysicalDeviceGet(int id);
 PhysicalInterface *PhysicalInterfaceGet(const std::string &name);
 LogicalInterface *LogicalInterfaceGet(int id, const std::string &name);

@@ -24,6 +24,7 @@ from pysandesh.gen_py.process_info.ttypes import ConnectionStatus
 from cfgm_common.exceptions import ResourceExhaustionError
 from cfgm_common.vnc_db import DBBase
 from vnc_api.vnc_api import VncApi
+from db import DMCassandraDB
 from db import DBBaseDM, BgpRouterDM, PhysicalRouterDM, PhysicalInterfaceDM,\
     ServiceInstanceDM, LogicalInterfaceDM, VirtualMachineInterfaceDM, \
     VirtualNetworkDM, RoutingInstanceDM, GlobalSystemConfigDM, LogicalRouterDM, \
@@ -32,15 +33,16 @@ from db import DBBaseDM, BgpRouterDM, PhysicalRouterDM, PhysicalInterfaceDM,\
     NetworkDeviceConfigDM, E2ServiceProviderDM, PeeringPolicyDM, \
     SecurityGroupDM, AccessControlListDM, NodeProfileDM, FabricNamespaceDM, \
     RoleConfigDM, FabricDM, LinkAggregationGroupDM, FloatingIpPoolDM, \
-    DataCenterInterconnectDM, VirtualPortGroupDM
+    DataCenterInterconnectDM, VirtualPortGroupDM, PortDM, TagDM, \
+    ServiceApplianceDM, ServiceApplianceSetDM, ServiceTemplateDM, \
+    NetworkIpamDM
+
+
 from dm_amqp import DMAmqpHandle
 from dm_utils import PushConfigState
 from ansible_base import AnsibleBase
 from device_conf import DeviceConf
 from logger import DeviceManagerLogger
-
-# zookeeper client connection
-_zookeeper_client = None
 
 
 class DeviceManager(object):
@@ -67,6 +69,8 @@ class DeviceManager(object):
             'fabric': [],
             'fabric_namespace': [],
             'virtual_port_group': [],
+            'service_instance': [],
+            'service_appliance': [],
         },
         'global_system_config': {
             'self': ['physical_router', 'data_center_interconnect'],
@@ -107,12 +111,15 @@ class DeviceManager(object):
             'self': ['physical_router',
                      'physical_interface',
                      'logical_interface',
-                     'virtual_port_group'],
+                     'virtual_port_group'
+                     ],
             'physical_router': ['logical_interface'],
-            'logical_interface': ['physical_router'],
+            'logical_interface': ['physical_interface', 'physical_router'],
             'physical_interface': ['physical_router'],
             'virtual_port_group': ['physical_router'],
-            'virtual_machine_interface': ['physical_interface']
+            'virtual_machine_interface': ['physical_interface'],
+            'service_appliance': ['physical_router'],
+            'port': ['physical_router'],
         },
         'logical_interface': {
             'self': ['physical_router',
@@ -124,6 +131,10 @@ class DeviceManager(object):
                                           'physical_interface'],
             'physical_router': ['virtual_machine_interface'],
             'instance_ip': ['physical_interface'],
+        },
+        'service_appliance': {
+            'self': ['physical_interface'],
+            'service_appliance_set': ['physical_interface'],
         },
         'virtual_machine_interface': {
             'self': ['logical_interface',
@@ -153,18 +164,28 @@ class DeviceManager(object):
             'self': ['security_group'],
             'security_group': [],
         },
+        'service_appliance_set': {
+            'self': [],
+            'service_template': ['service_appliance'],
+        },
+        'service_template': {
+            'self': [],
+            'service_instance': ['service_appliance_set'],
+        },
         'service_instance': {
             'self': ['port_tuple'],
-            'port_tuple': [],
+            'port_tuple': ['service_template'],
         },
         'port_tuple': {
             'self': ['virtual_machine_interface', 'service_instance'],
-            'service_instance': ['virtual_machine_interface'],
+            'logical_router': ['service_instance'],
+            'service_instance': ['virtual_machine_interface', 'service_template'],
             'virtual_machine_interface': ['service_instance']
         },
         'virtual_network': {
             'self': ['physical_router', 'data_center_interconnect',
-                     'virtual_machine_interface', 'logical_router', 'fabric', 'floating_ip_pool'],
+                     'virtual_machine_interface', 'logical_router',
+                     'fabric', 'floating_ip_pool', 'tag', 'network-ipam'],
             'routing_instance': ['physical_router', 'logical_router',
                                  'virtual_machine_interface'],
             'physical_router': [],
@@ -172,9 +193,10 @@ class DeviceManager(object):
             'data_center_interconnect': ['physical_router'],
             'virtual_machine_interface': ['physical_router'],
             'floating_ip_pool': ['physical_router'],
+            'network-ipam': ['tag']
         },
         'logical_router': {
-            'self': ['physical_router', 'virtual_network'],
+            'self': ['physical_router', 'virtual_network', 'port_tuple'],
             'physical_router': [],
             'data_center_interconnect': ['physical_router'],
             'virtual_network': ['physical_router'],
@@ -232,16 +254,27 @@ class DeviceManager(object):
             'self': ['e2_service_provider'],
             'e2_service_provider': [],
         },
+        'tag': {
+            'self': ['port'],
+            'virtual-network': ['port']
+        },
+        'network-ipam': {
+            'self': ['virtual-network'],
+            'virtual-network': ['tag']
+        },
+        'port': {
+            'self': ['physical_interface'],
+            'tag': ['physical_interface'],
+        },
     }
 
     _instance = None
 
-    def __init__(self, dm_logger=None, args=None, object_db=None,
+    def __init__(self, dm_logger=None, args=None, zookeeper_client=None,
                  amqp_client=None):
         DeviceManager._instance = self
         self._args = args
         self._amqp_client = amqp_client
-        self._object_db = object_db
 
         PushConfigState.set_push_mode(int(self._args.push_mode))
         PushConfigState.set_repush_interval(int(self._args.repush_interval))
@@ -307,6 +340,8 @@ class DeviceManager(object):
                                       self._args)
         self._vnc_amqp.establish()
 
+        # Initialize cassandra
+        self._object_db = DMCassandraDB.get_instance(zookeeper_client, self._args, self.logger)
         DBBaseDM.init(self, self.logger, self._object_db)
         DBBaseDM._sandesh = self.logger._sandesh
 
@@ -347,9 +382,6 @@ class DeviceManager(object):
         for obj in BgpRouterDM.list_obj():
             BgpRouterDM.locate(obj['uuid'], obj)
 
-        for obj in PortTupleDM.list_obj():
-            PortTupleDM.locate(obj['uuid'], obj)
-
         for obj in PhysicalInterfaceDM.list_obj():
             PhysicalInterfaceDM.locate(obj['uuid'], obj)
 
@@ -371,6 +403,15 @@ class DeviceManager(object):
 
         for obj in VirtualPortGroupDM.list_obj():
             VirtualPortGroupDM.locate(obj['uuid'], obj)
+
+        for obj in PortDM.list_obj():
+            PortDM.locate(obj['uuid'], obj)
+
+        for obj in TagDM.list_obj():
+            TagDM.locate(obj['uuid'], obj)
+
+        for obj in NetworkIpamDM.list_obj():
+            NetworkIpamDM.locate(obj['uuid'], obj)
 
         for obj in VirtualMachineInterfaceDM.list_obj():
             VirtualMachineInterfaceDM.locate(obj['uuid'], obj)
@@ -401,8 +442,20 @@ class DeviceManager(object):
         si_uuid_set = set([si_obj['uuid'] for si_obj in si_obj_list])
         self._object_db.handle_pnf_resource_deletes(si_uuid_set)
 
+        for obj in ServiceApplianceSetDM.list_obj():
+            ServiceApplianceSetDM.locate(obj['uuid'], obj)
+
+        for obj in ServiceApplianceDM.list_obj():
+            ServiceApplianceDM.locate(obj['uuid'], obj)
+
+        for obj in ServiceTemplateDM.list_obj():
+            ServiceTemplateDM.locate(obj['uuid'], obj)
+
         for obj in si_obj_list:
             ServiceInstanceDM.locate(obj['uuid'], obj)
+
+        for obj in PortTupleDM.list_obj():
+            PortTupleDM.locate(obj['uuid'], obj)
 
         for obj in InstanceIpDM.list_obj():
             InstanceIpDM.locate(obj['uuid'], obj)
@@ -481,13 +534,15 @@ class DeviceManager(object):
         for obj_cls in DBBaseDM.get_obj_type_map().values():
             obj_cls.reset()
         DBBase.clear()
+        DMCassandraDB.clear_instance()
         cls._instance = None
     # end destroy_instance
 
     def connection_state_update(self, status, message=None):
         ConnectionState.update(
             conn_type=ConnType.APISERVER, name='ApiServer',
-            status=status, message=message or '',
+            status=status, 
+            message=message or 'ApiServer Connection State updated',
             server_addrs=['%s:%s' % (self._args.api_server_ip,
                                      self._args.api_server_port)])
     # end connection_state_update

@@ -28,6 +28,8 @@ import pycassa.connection
 from pycassa.system_manager import SystemManager
 import kazoo.client
 import kazoo.handlers.gevent
+from thrift.transport import TSSLSocket
+import ssl
 
 from cfgm_common.vnc_cassandra import VncCassandraClient
 from vnc_cfg_api_server import utils
@@ -160,7 +162,8 @@ class DatabaseExim(object):
                           'zookeeper', 'controller_epoch',
                           'api-server-election', 'schema-transformer',
                           'device-manager', 'svc-monitor', 'contrail_cs',
-                          'lockpath']
+                          'lockpath', 'analytics-discovery-',
+                          'analytics-discovery-' + self._api_args.cluster_id]
         # seed zookeeper
         for path_value_ts in json.loads(self.import_data['zookeeper'] or "{}"):
             path = path_value_ts[0]
@@ -171,6 +174,14 @@ class DatabaseExim(object):
             value = path_value_ts[1][0]
             self._zookeeper.create(path, str(value), makepath=True)
     # end db_import
+
+    def _make_ssl_socket_factory(self, ca_certs, validate=True):
+        # copy method from pycassa library because no other method
+        # to override ssl version
+        def ssl_socket_factory(host, port):
+            TSSLSocket.TSSLSocket.SSL_VERSION = ssl.PROTOCOL_TLSv1_2
+            return TSSLSocket.TSSLSocket(host, port, ca_certs=ca_certs, validate=validate)
+        return ssl_socket_factory
 
     def db_export(self):
         db_contents = {'cassandra': {},
@@ -187,7 +198,7 @@ class DatabaseExim(object):
 
             socket_factory = pycassa.connection.default_socket_factory
             if self._api_args.cassandra_use_ssl:
-                socket_factory = pycassa.connection.make_ssl_socket_factory(
+                socket_factory = self._make_ssl_socket_factory(
                     self._api_args.cassandra_ca_certs, validate=False)
             pool = pycassa.ConnectionPool(
                 full_ks_name, self._api_args.cassandra_server_list,

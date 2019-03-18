@@ -24,10 +24,9 @@ from job_manager.job_utils import JobVncApi
 #    mock_image_upgrade_list,mock_upgrade_plan,JobAnnotations
 
 ordered_role_groups = [
-    ["CRB-Access@leaf", "ERB-UCAST-Gateway@leaf", "CRB-Gateway@leaf",
-     "DC-Gateway@leaf"],
-    ["null@spine", "CRB-Access@spine", "CRB-MCAST-Gateway@spine",
-     "CRB-Gateway@spine", "Route-Reflector@spine", "DC-Gateway@spine"],
+    ["leaf"],
+    ["spine"],
+    ["default"]
 ]
 
 sys.path.append("/opt/contrail/fabric_ansible_playbooks/module_utils")
@@ -59,7 +58,8 @@ class FilterModule(object):
     # end filters
 
     # Wrapper to call main routine
-    def get_hitless_upgrade_plan(self, job_ctx, image_upgrade_list):
+    def get_hitless_upgrade_plan(self, job_ctx, image_upgrade_list,
+                                 device_json):
         try:
             FilterLog.instance("HitlessUpgradeFilter")
             self.job_input = FilterModule._validate_job_ctx(job_ctx)
@@ -72,6 +72,7 @@ class FilterModule(object):
             self.batch_limit = self.advanced_parameters.get(
                 'bulk_device_upgrade_count')
             self.image_upgrade_list = image_upgrade_list
+            self.device_json = device_json
             upgrade_plan = self._get_hitless_upgrade_plan()
             return upgrade_plan
         except Exception as ex:
@@ -260,7 +261,7 @@ class FilterModule(object):
             batch_load_list = []
             for role in role_group:
                 # Only allow 1 spine at a time for now
-                batch_max = 1 if "@spine" in role else self.batch_limit
+                batch_max = 1 if "spine" in role else self.batch_limit
                 device_list = self.role_device_groups.get(role, [])
                 for device_uuid in device_list:
                     loaded = False
@@ -388,7 +389,7 @@ class FilterModule(object):
             report += "\n{}:\n".format(batch.get('name'))
             for device_name in batch.get('device_names', []):
                 device_info = devices[device_name]
-                current_version = device_info['current_image_version']
+                current_version = device_info['current_image_version'] or ""
                 new_version = device_info['image_version']
                 hitless_upgrade = device_info['basic']['device_hitless_upgrade']
                 is_hitless = "" if hitless_upgrade else "(not hitless)"
@@ -526,8 +527,12 @@ class FilterModule(object):
     # Get a single role for this device to be used in determining upgrade
     # ordering
     def _determine_role(self, physical_role, rb_roles):
-        # For now, we simply take the first rb_role listed
-        return rb_roles[0] + '@' + physical_role
+        # Use physical role for now. If not in ordered table, use default
+        for role_group in ordered_role_groups:
+            for role in role_group:
+                if physical_role == role:
+                    return physical_role
+        return "default"
     # end _determine_role
 
     # If old and new image versions match, don't upgrade
@@ -540,16 +545,9 @@ class FilterModule(object):
     # Get device password
     def _get_password(self, device_obj):
         password = ""
-        # TODO get password from first element of fabric object for now
-        # Get fabric object
-        fabric_obj = self.vncapi.fabric_read(id=self.fabric_uuid)
-        credentials = fabric_obj.fabric_credentials
-        if credentials:
-            dev_cred = credentials.get_device_credential()[0]
-            if dev_cred:
-                user_cred = dev_cred.get_credential()
-                if user_cred:
-                    password = user_cred.password
+        db_client_entry = self.device_json[device_obj.uuid]
+        if db_client_entry:
+            password = db_client_entry.get("device_password")
         return password
 
 def _parse_args():

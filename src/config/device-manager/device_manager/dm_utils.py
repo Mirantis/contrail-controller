@@ -147,6 +147,19 @@ class DMUtils(object):
     # end get_network_gateways
 
     @staticmethod
+    def get_server_discovery_parameters(subnets=[]):
+        server_discovery_params = []
+        for subnet in subnets:
+            server_discovery_params.append(
+                { "vlan_tag": subnet.get('vlan_tag', ''),
+                  "dhcp_relay_server": subnet.get('dhcp_relay_server', []),
+                  "default_gateway": subnet.get('default_gateway'),
+                  "ip_prefix_len": subnet.get('subnet', {}).get(
+                      'ip_prefix_len', 32)})
+        return server_discovery_params
+    # end get_server_discovery_parameters
+
+    @staticmethod
     def make_export_name(ri_name):
         return ri_name + '-' + 'export'
     # end make_export_name

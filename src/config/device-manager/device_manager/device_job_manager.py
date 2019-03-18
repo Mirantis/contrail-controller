@@ -9,9 +9,11 @@ import json
 import signal
 import ast
 import traceback
+import gevent
 
 from cfgm_common.uve.vnc_api.ttypes import FabricJobExecution, FabricJobUve, \
     PhysicalRouterJobExecution, PhysicalRouterJobUve
+from cfgm_common.vnc_object_db import VncObjectDBClient
 from job_manager.job_utils import JobStatus
 from job_manager.job_log_utils import JobLogUtils
 from job_manager.job_exception import JobException
@@ -25,16 +27,15 @@ class DeviceJobManager(object):
     JOB_REQUEST_CONSUMER = "job_request_consumer"
     JOB_REQUEST_ROUTING_KEY = "job.request"
     JOB_STATUS_EXCHANGE = "job_status_exchange"
+    JOB_STATUS_CONSUMER = "job_status_consumer."
     JOB_STATUS_ROUTING_KEY = "job.status."
     JOB_STATUS_TTL = 5*60
     FABRIC_ZK_LOCK = "fabric-job-monitor"
 
     _instance = None
 
-    def __init__(self, db_conn, amqp_client, zookeeper_client, args,
-                 dm_logger):
+    def __init__(self, amqp_client, zookeeper_client, args, dm_logger):
         DeviceJobManager._instance = self
-        self._db_conn = db_conn
         self._amqp_client = amqp_client
         self._zookeeper_client = zookeeper_client
         self._args = args
@@ -53,12 +54,7 @@ class DeviceJobManager(object):
             'fabric_ansible_conf_file': self._args.fabric_ansible_conf_file,
             'host_ip': self._args.host_ip,
             'zk_server_ip': self._args.zk_server_ip,
-            'cluster_id': self._args.cluster_id,
-            'cassandra_user': self._args.cassandra_user,
-            'cassandra_password': self._args.cassandra_password,
-            'cassandra_server_list': self._args.cassandra_server_list,
-            'cassandra_use_ssl': self._args.cassandra_use_ssl,
-            'cassandra_ca_certs': self._args.cassandra_ca_certs
+            'cluster_id': self._args.cluster_id
         }
         self._job_args = json.dumps(job_args)
 
@@ -70,6 +66,16 @@ class DeviceJobManager(object):
         self._logger = self._job_log_utils.config_logger
         self._sandesh = self._logger._sandesh
 
+        self._db_conn = self._initialize_db_connection(args, dm_logger)
+
+        self._amqp_client.add_exchange(self.JOB_STATUS_EXCHANGE, type='direct')
+        # add dummy consumer to initialize the exchange
+        self._amqp_client.add_consumer(
+            self.JOB_STATUS_CONSUMER + "dummy",
+            self.JOB_STATUS_EXCHANGE,
+            routing_key=self.JOB_STATUS_ROUTING_KEY + "dummy",
+            auto_delete=True)
+
         self._amqp_client.add_exchange(self.JOB_REQUEST_EXCHANGE,
                                        type='direct')
         self._amqp_client.add_consumer(
@@ -77,7 +83,6 @@ class DeviceJobManager(object):
             self.JOB_REQUEST_EXCHANGE,
             routing_key=self.JOB_REQUEST_ROUTING_KEY,
             callback=self.handle_execute_job_request)
-        self._amqp_client.add_exchange(self.JOB_STATUS_EXCHANGE, type='direct')
     # end __init__
 
     @classmethod
@@ -92,6 +97,35 @@ class DeviceJobManager(object):
             return
         cls._instance = None
     # end destroy_instance
+
+    def _initialize_db_connection(self, args, dm_logger):
+        credential = None
+        if args.cassandra_user and args.cassandra_password:
+            credential = {
+                'username': args.cassandra_user,
+                'password': args.cassandra_password
+            }
+
+        timeout = int(args.job_manager_db_conn_retry_timeout)
+        max_retries = int(args.job_manager_db_conn_max_retries)
+
+        retry_count = 1
+        while True:
+            try:
+                return VncObjectDBClient(
+                    args.cassandra_server_list, args.cluster_id, None, None,
+                    dm_logger.log, credential=credential,
+                    ssl_enabled=args.cassandra_use_ssl,
+                    ca_certs=args.cassandra_ca_certs)
+            except Exception as e:
+                if retry_count >= max_retries:
+                    raise e
+                self._logger.warning("Error while initializing db connection, "
+                    "retrying: %s" % str(e))
+                gevent.sleep(timeout)
+            finally:
+                retry_count = retry_count + 1
+    # end _initialize_db_connection
 
     def db_read(self, obj_type, obj_id, obj_fields=None,
                 ret_readonly=False):
@@ -117,11 +151,10 @@ class DeviceJobManager(object):
         return True
     # end is_max_job_threshold_reached
 
-    def publish_job_status_notification(self, status, job_execution_id):
+    def publish_job_status_notification(self, job_execution_id, status):
         try:
-            msg = {"job_execution_id": job_execution_id,
-                   "job_status": status
-                   }
+            msg = { 'job_execution_id': job_execution_id,
+                    'job_status': status }
             self._amqp_client.publish(
                 msg, self.JOB_STATUS_EXCHANGE,
                 routing_key=self.JOB_STATUS_ROUTING_KEY + job_execution_id,
@@ -167,6 +200,7 @@ class DeviceJobManager(object):
         job_execution_id = job_input_params.get('job_execution_id')
         job_template_fq_name = job_input_params.get('job_template_fq_name')
         job_template_id = job_input_params.get('job_template_id')
+
         fabric_fq_name = None
         fabric_job_uve_name = ''
 
@@ -178,13 +212,13 @@ class DeviceJobManager(object):
                     job_template_fq_name)
                 job_input_params["job_template_id"] = job_template_id
 
-            if is_delete is None or is_delete is False:
-                # read the device object and pass the necessary data to the job
-                if device_list:
-                    self.read_device_data(device_list, job_input_params,
-                                          job_execution_id)
-                else:
-                    self.read_fabric_data(job_input_params, job_execution_id)
+            # read the device object and pass the necessary data to the job
+            if device_list:
+                self.read_device_data(device_list, job_input_params,
+                                      job_execution_id)
+            else:
+                self.read_fabric_data(job_input_params, job_execution_id,
+                                      is_delete)
 
             # read the job concurrency level from job template
             job_concurrency = self.get_job_concurrency(job_template_id,
@@ -199,11 +233,13 @@ class DeviceJobManager(object):
             device_fqnames = []
             # skip UVE creations and device reads from the database since
             # the device object will be deleted
-            if is_delete is None or not is_delete:
+            if not is_delete:
 
                 # create the UVE
                 if fabric_fq_name is not "__DEFAULT__" and not device_list:
                     self.create_fabric_job_uve(fabric_job_uve_name,
+                                               job_input_params.get(
+                                                   'job_execution_id'),
                                                JobStatus.STARTING.value, 0.0)
                 if device_list:
                     device_fqnames = self.create_physical_router_job_uve(
@@ -283,11 +319,12 @@ class DeviceJobManager(object):
                               job_params=job_input_params)
     # end handle_execute_job_request
 
-    def create_fabric_job_uve(self, fabric_job_uve_name, job_status,
+    def create_fabric_job_uve(self, fabric_job_uve_name,
+                              execution_id, job_status,
                               percentage_completed):
         job_execution_data = FabricJobExecution(
             name=fabric_job_uve_name,
-            execution_id=fabric_job_uve_name,
+            execution_id=execution_id,
             job_start_ts=int(round(time.time() * 1000)),
             job_status=job_status,
             percentage_completed=percentage_completed
@@ -342,6 +379,7 @@ class DeviceJobManager(object):
         if mark_uve:
             if fabric_fq_name is not "__DEFAULT__" and not device_list:
                 self.create_fabric_job_uve(fabric_job_uve_name,
+                                           job_execution_id,
                                            JobStatus.FAILURE.value, 100.0)
             if device_list:
                 self.create_physical_router_job_uve(device_list,
@@ -605,7 +643,8 @@ class DeviceJobManager(object):
             request_params.update({"device_json": device_data})
     # end read_device_data
 
-    def read_fabric_data(self, request_params, job_execution_id):
+    def read_fabric_data(self, request_params, job_execution_id,
+                         is_delete=False):
         if request_params.get('input') is None:
             err_msg = "Missing job input"
             raise JobException(err_msg, job_execution_id)
@@ -623,7 +662,7 @@ class DeviceJobManager(object):
             if "device_deletion_template" in request_params.get(
                    'job_template_fq_name'):
                 fabric_fq_name = "__DEFAULT__"
-            else:
+            elif not is_delete:
                 err_msg = "Missing fabric details in the job input"
                 raise JobException(err_msg, job_execution_id)
         if fabric_fq_name:

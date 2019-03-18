@@ -16,7 +16,6 @@ from attrdict import AttrDict
 from cfgm_common import vnc_cgitb
 from cfgm_common.kombu_amqp import KombuAmqpClient
 from cfgm_common.zkclient import ZookeeperClient
-from db import DMCassandraDB
 from distutils.util import strtobool
 from device_job_manager import DeviceJobManager
 from device_manager import DeviceManager
@@ -28,7 +27,6 @@ from logger import DeviceManagerLogger
 
 _amqp_client = None
 _zookeeper_client = None
-_object_db = None
 
 
 def initialize_amqp_client(logger, args):
@@ -49,7 +47,7 @@ def initialize_amqp_client(logger, args):
             ssl_ca_certs=args.kombu_ssl_ca_certs
         )
         amqp_client = KombuAmqpClient(logger.log, rabbitmq_cfg,
-                                      heartbeat=10)
+            heartbeat=args.rabbit_health_check_interval)
         amqp_client.run()
     except Exception as e:
         logger.error("Error while initializing the AMQP"
@@ -62,12 +60,12 @@ def initialize_amqp_client(logger, args):
 
 def run_device_manager(dm_logger, args):
     global _amqp_client
-    global _object_db
+    global _zookeeper_client
 
     dm_logger.notice("Elected master Device Manager node. Initializing... ")
     dm_logger.introspect_init()
     DeviceZtpManager.get_instance().set_active()
-    DeviceManager(dm_logger, args, _object_db, _amqp_client)
+    DeviceManager(dm_logger, args, _zookeeper_client, _amqp_client)
     if _amqp_client._consumer_gl is not None:
         gevent.joinall([_amqp_client._consumer_gl])
 # end run_device_manager
@@ -86,8 +84,6 @@ def sigterm_handler():
     DeviceZtpManager.destroy_instance()
     DeviceJobManager.destroy_instance()
 
-    DMCassandraDB.clear_instance()
-
     if _amqp_client is not None:
         _amqp_client.stop()
 # end sigterm_handler
@@ -96,7 +92,6 @@ def sigterm_handler():
 def main(args_str=None):
     global _amqp_client
     global _zookeeper_client
-    global _object_db
 
     if not args_str:
         args_str = ' '.join(sys.argv[1:])
@@ -124,30 +119,33 @@ def main(args_str=None):
     vnc_amqp.close()
     dm_logger.debug("Removed remaining AMQP queue from previous run")
 
-    if 'host_ip' in args:
-        host_ip = args.host_ip
-    else:
-        host_ip = socket.gethostbyname(socket.getfqdn())
+    if 'host_ip' not in args:
+        args.host_ip = socket.gethostbyname(socket.getfqdn())
 
     _amqp_client = initialize_amqp_client(dm_logger, args)
     _zookeeper_client = ZookeeperClient(client_pfx+"device-manager",
-                                        args.zk_server_ip, host_ip)
-    _object_db = DMCassandraDB.get_instance(_zookeeper_client, args, dm_logger)
+                                        args.zk_server_ip, args.host_ip)
 
     try:
         # Initialize the device job manager
-        DeviceJobManager(_object_db, _amqp_client, _zookeeper_client, args,
+        DeviceJobManager(_amqp_client, _zookeeper_client, args,
                          dm_logger)
+        # Allow kombu client to connect consumers
+        gevent.sleep(0.5)
     except Exception as e:
         dm_logger.error("Error while initializing the device job "
-                        "manager %s" % repr(e))
+                        "manager %s" % str(e))
+        raise e
 
     try:
         # Initialize the device ztp manager
         DeviceZtpManager(_amqp_client, args, dm_logger)
+        # Allow kombu client to connect consumers
+        gevent.sleep(0.5)
     except Exception as e:
         dm_logger.error("Error while initializing the device ztp "
-                        "manager %s" % repr(e))
+                        "manager %s" % str(e))
+        raise e
 
     gevent.signal(signal.SIGHUP, sighup_handler)
     gevent.signal(signal.SIGTERM, sigterm_handler)

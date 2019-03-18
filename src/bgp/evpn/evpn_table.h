@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "bgp/bgp_config_ifmap.h"
 #include "bgp/bgp_table.h"
 #include "bgp/evpn/evpn_route.h"
 

@@ -140,6 +140,10 @@ class SchemaTransformer(object):
         'bgp_router': {
             'self': [],
             'bgp_as_a_service': [],
+            'physical_router': []
+        },
+        'physical_router': {
+            'self': ['bgp_router'],
         },
         'global_system_config': {
             'self': [],
@@ -460,7 +464,7 @@ def parse_args(args_str):
         'cassandra_server_list': '127.0.0.1:9160',
         'api_server_ip': '127.0.0.1',
         'api_server_port': '8082',
-        'api_server_use_ssl': False,
+        'api_server_use_ssl': None,
         'zk_server_ip': '127.0.0.1',
         'zk_server_port': '2181',
         'collectors': None,
@@ -641,7 +645,7 @@ def run_schema_transformer(st_logger, args):
     def connection_state_update(status, message=None):
         ConnectionState.update(
             conn_type=ConnType.APISERVER, name='ApiServer',
-            status=status, message=message or '',
+            status=status, message=message or 'ApiServer',
             server_addrs=['%s:%s' % (args.api_server_ip,
                                      args.api_server_port)])
     # end connection_state_update

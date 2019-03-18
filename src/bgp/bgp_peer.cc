@@ -404,7 +404,8 @@ void BgpPeer::SendEndOfRIB(Address::Family family) {
 }
 
 void BgpPeer::BGPPeerInfoSend(const BgpPeerInfoData &peer_info) const {
-    BGPPeerInfo::Send(peer_info);
+    assert(!peer_info.get_name().empty());
+    BGP_UVE_SEND(BGPPeerInfo, peer_info);
 }
 
 bool BgpPeer::CanUseMembershipManager() const {
@@ -618,12 +619,14 @@ BgpPeer::~BgpPeer() {
     PeerStatsData peer_stats_data;
     peer_stats_data.set_name(ToUVEKey());
     peer_stats_data.set_deleted(true);
-    PeerStatsUve::Send(peer_stats_data, "ObjectBgpPeer");
+    assert(!peer_stats_data.get_name().empty());
+    BGP_UVE_SEND2(PeerStatsUve, peer_stats_data, "ObjectBgpPeer");
 
     PeerFlapData peer_flap_data;
     peer_flap_data.set_name(ToUVEKey());
     peer_flap_data.set_deleted(true);
-    PeerFlap::Send(peer_flap_data, "ObjectBgpPeer");
+    assert(!peer_flap_data.get_name().empty());
+    BGP_UVE_SEND2(PeerFlap, peer_flap_data, "ObjectBgpPeer");
 
     BGP_LOG_PEER(Event, this, SandeshLevel::SYS_INFO, BGP_LOG_FLAG_ALL,
         BGP_PEER_DIR_NA, "Deleted");
@@ -2714,7 +2717,8 @@ void BgpPeer::increment_flap_count() {
     PeerFlapData peer_flap_data;
     peer_flap_data.set_name(ToUVEKey());
     peer_flap_data.set_flap_info(flap_info);
-    PeerFlap::Send(peer_flap_data, "ObjectBgpPeer");
+    assert(!peer_flap_data.get_name().empty());
+    BGP_UVE_SEND2(PeerFlap, peer_flap_data, "ObjectBgpPeer");
 }
 
 void BgpPeer::reset_flap_count() {
@@ -2730,7 +2734,8 @@ void BgpPeer::reset_flap_count() {
     PeerFlapData peer_flap_data;
     peer_flap_data.set_name(ToUVEKey());
     peer_flap_data.set_flap_info(flap_info);
-    PeerFlap::Send(peer_flap_data, "ObjectBgpPeer");
+    assert(!peer_flap_data.get_name().empty());
+    BGP_UVE_SEND2(PeerFlap, peer_flap_data, "ObjectBgpPeer");
 }
 
 // Ignore if the peer is IBGP and a BGPaaS client since we do not support that

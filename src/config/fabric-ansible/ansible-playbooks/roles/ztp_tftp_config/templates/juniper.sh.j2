@@ -1,0 +1,29 @@
+#!/bin/sh
+serial_number=$(echo "show system information | display xml" | cli | grep serial-number | awk -F">" '{print $2}' | awk -F"<" '{print $1}')
+cat <<EOF > /tmp/juniper.config
+system {
+    host-name "$serial_number"
+    root-authentication {
+        encrypted-password "{{ ztp_tftp_config.password | encrypt | shell_escape }}";
+    }
+    services {
+        ssh {
+            root-login allow;
+        }
+        telnet;
+        netconf {
+            ssh;
+        }
+    }
+}
+protocols {
+    lldp {
+        interface all;
+    }
+}
+EOF
+cli <<EOF
+configure
+load merge /tmp/juniper.config relative
+commit and-quit
+EOF

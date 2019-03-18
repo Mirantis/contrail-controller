@@ -33,13 +33,15 @@ class JobManager(object):
 
     def __init__(self, logger, vnc_api, job_input, job_log_utils, job_template,
                  result_handler, job_utils, playbook_seq, job_percent,
-                 zk_client, db_init_params, cluster_id):
+                 zk_client):
         self._logger = logger
         self._vnc_api = vnc_api
         self.job_execution_id = None
         self.job_data = None
         self.device_json = None
         self.auth_token = None
+        self.contrail_cluster_id = None
+        self.api_server_host = None
         self.job_log_utils = job_log_utils
         self.job_template = job_template
         self.sandesh_args = None
@@ -52,8 +54,6 @@ class JobManager(object):
         self.result_handler = result_handler
         self.job_percent = job_percent
         self._zk_client = zk_client
-        self.db_init_params = db_init_params
-        self.cluster_id = cluster_id
         logger.debug("Job manager initialized")
 
     def parse_job_input(self, job_input_json):
@@ -69,6 +69,7 @@ class JobManager(object):
             self._logger.debug("Device data is not passed from api server.")
 
         self.auth_token = job_input_json.get('auth_token')
+        self.contrail_cluster_id = job_input_json.get('contrail_cluster_id')
         self.api_server_host = job_input_json.get('api_server_host')
 
         self.sandesh_args = job_input_json.get('args')
@@ -78,7 +79,7 @@ class JobManager(object):
 
         self.vnc_api_init_params = job_input_json.get('vnc_api_init_params')
 
-        self.multi_device_count = self.job_data.get('multi_device_count')
+        self.total_job_task_count = self.job_data.get('total_job_task_count')
 
     def start_job(self):
         # spawn job greenlets
@@ -86,15 +87,26 @@ class JobManager(object):
                                  self.job_template, self.job_execution_id,
                                  self.job_data, self.job_utils,
                                  self.device_json, self.auth_token,
+                                 self.contrail_cluster_id,
                                  self.api_server_host, self.job_log_utils,
                                  self.sandesh_args, self.fabric_fq_name,
                                  self.job_log_utils.args.playbook_timeout,
                                  self.playbook_seq, self.vnc_api_init_params,
-                                 self._zk_client, self.db_init_params,
-                                 self.cluster_id)
+                                 self._zk_client)
 
-        if self.device_json is not None:
-            if not self.device_json:
+        # check if its a multi device playbook
+        playbooks = self.job_template.get_job_template_playbooks()
+        play_info = playbooks.playbook_info[self.playbook_seq]
+        is_multi_device_playbook = play_info.multi_device_playbook
+        ignore_device_json = self.job_data.get('is_delete')
+
+        # for fabric config push as part of delete workflow,
+        # device json is not needed. There will be no performance
+        # impact as fabric delete from DM will always have one prouter
+        # uuid in the device_list.
+        if is_multi_device_playbook\
+                and not ignore_device_json:
+            if self.device_json is None or not self.device_json:
                 msg = MsgBundle.getMessage(MsgBundle.DEVICE_JSON_NOT_FOUND)
                 raise JobException(msg, self.job_execution_id)
             else:
@@ -107,7 +119,7 @@ class JobManager(object):
         job_worker_pool = Pool(self.max_job_task)
         job_percent_per_task = \
             self.job_log_utils.calculate_job_percentage(
-                self.multi_device_count or len(self.device_json),
+                self.total_job_task_count or len(self.device_json),
                 buffer_task_percent=False,
                 total_percent=self.job_percent)[0]
         for device_id in self.device_json:
@@ -120,19 +132,18 @@ class JobManager(object):
             device_fqname = ':'.join(
                 map(str, device_data.get('device_fqname')))
             device_name = device_data.get('device_fqname', [""])[-1]
-            # create prouter UVE in job_manager only if it is not a multi
-            # device job template
-            if not self.job_template.get_job_template_multi_device_job():
-                job_template_fq_name = ':'.join(
-                    map(str, self.job_template.fq_name))
-                pr_fabric_job_template_fq_name = device_fqname + ":" + \
-                    self.fabric_fq_name + ":" + \
-                    job_template_fq_name
-                self.job_log_utils.send_prouter_job_uve(
-                    self.job_template.fq_name,
-                    pr_fabric_job_template_fq_name,
-                    self.job_execution_id,
-                    job_status="IN_PROGRESS")
+
+            # update prouter UVE
+            job_template_fq_name = ':'.join(
+                map(str, self.job_template.fq_name))
+            pr_fabric_job_template_fq_name = device_fqname + ":" + \
+                self.fabric_fq_name + ":" + \
+                job_template_fq_name
+            self.job_log_utils.send_prouter_job_uve(
+                self.job_template.fq_name,
+                pr_fabric_job_template_fq_name,
+                self.job_execution_id,
+                job_status="IN_PROGRESS")
 
             job_worker_pool.start(Greenlet(job_handler.handle_job,
                                            result_handler,
@@ -152,14 +163,12 @@ class WFManager(object):
         self._logger = logger
         self._vnc_api = vnc_api
         self.job_input = job_input
-        self.db_init_params = None
         self.job_log_utils = job_log_utils
         self.job_execution_id = None
         self.job_template_id = None
         self.device_json = None
         self.result_handler = None
         self.job_data = None
-        self.cluster_id = None
         self.fabric_fq_name = None
         self.parse_job_input(job_input)
         self.job_utils = JobUtils(self.job_execution_id,
@@ -183,8 +192,6 @@ class WFManager(object):
         self.job_execution_id = job_input_json.get('job_execution_id')
         self.job_data = job_input_json.get('input')
         self.fabric_fq_name = job_input_json.get('fabric_fq_name')
-        self.db_init_params = job_input_json.get('db_init_params')
-        self.cluster_id = job_input_json.get('cluster_id')
 
     def _validate_job_input(self, input_schema, ip_json):
         if ip_json is None:
@@ -250,6 +257,11 @@ class WFManager(object):
 
             for i in range(0, len(playbook_list)):
 
+                # check if its a multi device playbook
+                playbooks = job_template.get_job_template_playbooks()
+                play_info = playbooks.playbook_info[i]
+                multi_device_playbook = play_info.multi_device_playbook
+
                 if len(playbook_list) > 1:
                     # get the job percentage based on weightage of each plabook
                     # when they are chained
@@ -270,9 +282,7 @@ class WFManager(object):
                                          self.job_input, self.job_log_utils,
                                          job_template,
                                          self.result_handler, self.job_utils, i,
-                                         job_percent, self._zk_client,
-                                         self.db_init_params,
-                                         self.cluster_id)
+                                         job_percent, self._zk_client)
                     job_mgr.start_job()
 
                     # retry the playbook execution if retry_devices is added to
@@ -291,9 +301,10 @@ class WFManager(object):
                     # and all the devices have failed some job execution
                     # declare it as failure and the stop the workflow
 
-                    if self.job_input.get('device_json') is None or\
-                        len(self.result_handler.failed_device_jobs)\
-                            == len(self.job_input.get('device_json')):
+                    if not multi_device_playbook or \
+                            (multi_device_playbook and
+                             len(self.result_handler.failed_device_jobs) == \
+                             len(self.job_input.get('device_json'))):
                         self._logger.error(
                             "Stop the workflow on the failed Playbook.")
                         break
@@ -312,7 +323,7 @@ class WFManager(object):
                 # read the device_data output of the playbook
                 # and update the job input so that it can be used in next
                 # iteration
-                if not self.job_input.get('device_json'):
+                if not multi_device_playbook:
                     device_json = pb_output.pop('device_json', None)
                     self.job_input['device_json'] = device_json
 

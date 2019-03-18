@@ -13,11 +13,14 @@ import uuid
 from cfgm_common import jsonutils as json
 from cfgm_common import rest
 from cfgm_common import PERMS_RWX, PERMS_NONE, PERMS_RX
+from cfgm_common.utils import _DEFAULT_ZK_LOCK_PATH_PREFIX
+from cfgm_common.utils import _DEFAULT_ZK_LOCK_TIMEOUT
 import netaddr
 from netaddr import IPNetwork, IPSet, IPAddress
 import gevent
 import bottle
 import time
+from kazoo.exceptions import LockTimeout
 
 try:
     from neutron_lib import constants
@@ -270,6 +273,13 @@ class DBInterface(object):
         self._contrail_extensions_enabled = contrail_extensions_enabled
         self._list_optimization_enabled = list_optimization_enabled
 
+        # Set the lock prefix for security_group_rule modifications
+        self.lock_path_prefix = '%s/%s' % (self._api_server_obj._args.cluster_id,
+                                           _DEFAULT_ZK_LOCK_PATH_PREFIX)
+        self.security_group_lock_prefix = '%s/security_group' % self.lock_path_prefix
+
+        self._zookeeper_client = self._api_server_obj._db_conn._zk_db._zk_client
+
         # Retry till a api-server is up
         self._connected_to_api_server = gevent.event.Event()
         connected = False
@@ -331,17 +341,15 @@ class DBInterface(object):
         if context and not context['is_admin']:
             return [str(uuid.UUID(context['tenant']))]
 
-        if not filters.get('tenant_id'):
-            return None
-
         return_project_ids = []
-        for project_id in filters.get('tenant_id'):
+        for project_id in (filters.get('tenant_id', []) +
+                           filters.get('project_id', [])):
             try:
                 return_project_ids.append(str(uuid.UUID(project_id)))
             except ValueError:
                 continue
 
-        return return_project_ids
+        return return_project_ids or None
 
     def _obj_to_dict(self, obj):
         return self._vnc_lib.obj_to_dict(obj)
@@ -454,34 +462,62 @@ class DBInterface(object):
     #end _raise_contrail_exception
 
     def _security_group_rule_create(self, sg_id, sg_rule):
-        try:
-            sg_vnc = self._vnc_lib.security_group_read(id=sg_id)
-        except NoIdError:
-            self._raise_contrail_exception('SecurityGroupNotFound', id=sg_id)
+        # Before we can update the rule inside security_group, get the
+        # lock first. This lock will be released in finally block below.
+        scope_lock = self._zookeeper_client.lock(
+            '%s/%s' % (
+                self.security_group_lock_prefix, sg_id
+            ))
 
-        rules = sg_vnc.get_security_group_entries()
-        if rules is None:
-            rules = PolicyEntriesType([sg_rule])
-        else:
-            rules.add_policy_rule(sg_rule)
-        sg_vnc.set_security_group_entries(rules)
-
+        # (SATHISH) This is a temp fix for fixing lost update problem during
+        # Parallel creation of Security Group Rule 
         try:
-            self._resource_update('security_group', sg_vnc)
-        except BadRequest as e:
-            self._raise_contrail_exception('BadRequest',
-                resource='security_group_rule', msg=str(e))
-        except OverQuota as e:
-            self._raise_contrail_exception('OverQuota',
-                overs=['security_group_rule'], msg=str(e))
-        except RefsExistError as e:
+            acquired_lock = scope_lock.acquire(timeout=_DEFAULT_ZK_LOCK_TIMEOUT)
+
+            # If this node acquired the lock, continue with creation of
+            # security_group rule.
             try:
-                rule_uuid = str(e).split(':')[1].strip()
-            except IndexError:
-                rule_uuid = None
-            self._raise_contrail_exception('SecurityGroupRuleExists',
-                resource='security_group_rule', id=rule_uuid, rule_id=rule_uuid)
-    # end _security_group_rule_create
+                sg_vnc = self._vnc_lib.security_group_read(id=sg_id)
+            except NoIdError:
+                scope_lock.release()
+                self._raise_contrail_exception('SecurityGroupNotFound', id=sg_id)
+
+            rules = sg_vnc.get_security_group_entries()
+            if rules is None:
+                rules = PolicyEntriesType([sg_rule])
+            else:
+                rules.add_policy_rule(sg_rule)
+            sg_vnc.set_security_group_entries(rules)
+
+            try:
+                self._resource_update('security_group', sg_vnc)
+            except BadRequest as e:
+                scope_lock.release()
+                self._raise_contrail_exception('BadRequest',
+                    resource='security_group_rule', msg=str(e))
+            except OverQuota as e:
+                scope_lock.release()
+                self._raise_contrail_exception('OverQuota',
+                    overs=['security_group_rule'], msg=str(e))
+            except RefsExistError as e:
+                try:
+                    rule_uuid = str(e).split(':')[1].strip()
+                except IndexError:
+                    rule_uuid = None
+                scope_lock.release()
+                self._raise_contrail_exception('SecurityGroupRuleExists',
+                    resource='security_group_rule', id=rule_uuid, rule_id=rule_uuid)
+
+        except LockTimeout:
+            # If the lock was not acquired and timeout of 5 seconds happened, then raise
+            # a bad request error.
+            msg = ("Security Group Rule could not be created, Try again.. ")
+            self._raise_contrail_exception('BadRequest',
+                resource='security_group_rule', msg=msg)
+        finally:
+            scope_lock.release()
+
+    # end _security_group_rule_create 
 
     def _security_group_rule_find(self, sgr_id, project_uuid=None):
         # Get all security group for a project if project uuid is specified
@@ -501,10 +537,29 @@ class DBInterface(object):
     #end _security_group_rule_find
 
     def _security_group_rule_delete(self, sg_obj, sg_rule):
-        rules = sg_obj.get_security_group_entries()
-        rules.get_policy_rule().remove(sg_rule)
-        sg_obj.set_security_group_entries(rules)
-        self._resource_update('security_group', sg_obj)
+        # Before we can delete the rule inside security_group, get the
+        # lock first. This lock will be released in finally block below.
+        scope_lock = self._zookeeper_client.lock(
+            '%s/%s' % (
+                self.security_group_lock_prefix, sg_obj.uuid
+            ))
+
+        try:
+            acquired_lock = scope_lock.acquire(timeout=_DEFAULT_ZK_LOCK_TIMEOUT)
+            # If this node acquired the lock, continue with deletion of
+            # security_group rule.
+            rules = sg_obj.get_security_group_entries()
+            rules.get_policy_rule().remove(sg_rule)
+            sg_obj.set_security_group_entries(rules)
+            self._resource_update('security_group', sg_obj)
+        except LockTimeout:
+            # If the lock was not acquired and timeout of 5 seconds happened, then raise
+            # a bad request error.
+            msg = ("Security Group Rule could not be deleted, Try again.. ")
+            self._raise_contrail_exception('BadRequest',
+                resource='security_group_rule', msg=msg)
+        finally:
+            scope_lock.release()
     #end _security_group_rule_delete
 
     def _security_group_delete(self, sg_id):
@@ -544,10 +599,19 @@ class DBInterface(object):
             try:
                 obj_uuid = create_method(obj)
             except RefsExistError:
-                obj.uuid = str(uuid.uuid4())
-                obj.name += '-' + obj.uuid
-                obj.fq_name[-1] += '-' + obj.uuid
-                obj_uuid = create_method(obj)
+                orig_obj_name = obj.name
+                if not obj.uuid:
+                    obj.uuid = str(uuid.uuid4())
+                try:
+                    # try to change only name and fq_name before changing uuid
+                    obj.name += '-' + obj.uuid
+                    obj.fq_name[-1] += '-' + obj.uuid
+                    obj_uuid = create_method(obj)
+                except RefsExistError:
+                    obj.uuid = str(uuid.uuid4())
+                    obj.name = orig_obj_name + '-' + obj.uuid
+                    obj.fq_name[-1] = orig_obj_name + '-' + obj.uuid
+                    obj_uuid = create_method(obj)
         except BadRequest as e:
             self._raise_contrail_exception('BadRequest',
                 resource=resource_type, msg=str(e))
@@ -605,12 +669,17 @@ class DBInterface(object):
 
     def _virtual_machine_interface_read(self, port_id=None, fq_name=None,
                                         fields=None):
-        fields = set(['logical_router_back_refs',
-                      'instance_ip_back_refs',
-                      'floating_ip_back_refs']) | set(fields or [])
+        back_ref_fields = ['logical_router_back_refs', 'instance_ip_back_refs',
+                           'floating_ip_back_refs']
+        prop_ref_fields = list(VirtualMachineInterface.prop_fields |
+                               VirtualMachineInterface.ref_fields)
+        if fields:
+            n_extra_fields = list(set(fields + back_ref_fields))
+        else:
+            n_extra_fields = list(set(prop_ref_fields + back_ref_fields))
 
         port_obj = self._vnc_lib.virtual_machine_interface_read(
-            id=port_id, fq_name=fq_name, fields=fields)
+            id=port_id, fq_name=fq_name, fields=n_extra_fields)
         return port_obj
     #end _virtual_machine_interface_read
 
@@ -1858,6 +1927,9 @@ class DBInterface(object):
             project_obj = self._get_project_obj(router_q)
             id_perms = IdPermsType(enable=True)
             rtr_obj = LogicalRouter(rtr_name, project_obj, id_perms=id_perms)
+            router_id = self._get_resource_id(router_q, False)
+            if router_id:
+                rtr_obj.uuid = router_id
         else:  # READ/UPDATE/DELETE
             rtr_obj = self._logical_router_read(rtr_id=router_q['id'])
 
@@ -2245,9 +2317,9 @@ class DBInterface(object):
         if 'name' in port_q and port_q['name']:
             port_obj.display_name = port_q['name']
 
-        if (port_q.get('device_owner') != constants.DEVICE_OWNER_ROUTER_INTF
-            and port_q.get('device_owner') != constants.DEVICE_OWNER_ROUTER_GW
-            and 'device_id' in port_q):
+        if (port_q.get('device_owner') != constants.DEVICE_OWNER_ROUTER_GW
+                and port_q.get('device_owner') not in constants.ROUTER_INTERFACE_OWNERS_SNAT
+                and 'device_id' in port_q):
             # IRONIC: verify port associated to baremetal 'VM'
             if port_q.get('binding:vnic_type') == 'baremetal':
                 self._port_set_vm_instance(port_obj, port_q.get('device_id'),
@@ -2549,6 +2621,26 @@ class DBInterface(object):
                     sorted_vmis[0].get_instance_ip_back_refs()):
                 return sorted_vmis[0]
 
+    def _port_get_interface_status(self, port_obj):
+        vmi_prop = port_obj.get_virtual_machine_interface_properties()
+        if vmi_prop is None or vmi_prop.get_sub_interface_vlan_tag() is None:
+            return constants.PORT_STATUS_DOWN
+        # if the VMI is a subinterface do special handling.
+        vmi_refs = port_obj.get_virtual_machine_interface_refs()
+        if vmi_refs is None:
+            return constants.PORT_STATUS_DOWN
+        if len(vmi_refs) > 1:
+            msg = ("Sub Interface %s(%s) has more that one VMI reference"
+                   % (port_obj.get_fq_name_str(), port_obj.uuid))
+            self.logger.warning(msg)
+        # if parent interface of a sub interface is attached to a VM, then subinterface
+        # is in PORT_STATUS_ACTIVE .
+        parent_port_obj = self._virtual_machine_interface_read(port_id=vmi_refs[0]['uuid'],
+                                                               fields=['virtual_machine_refs'])
+        if parent_port_obj.get_virtual_machine_refs():
+            return constants.PORT_STATUS_ACTIVE
+        return constants.PORT_STATUS_DOWN
+
     @catch_convert_exception
     def _port_vnc_to_neutron(self, port_obj, port_req_memo=None, oper=READ):
         port_q_dict = {}
@@ -2623,8 +2715,9 @@ class DBInterface(object):
             port_q_dict['binding:vif_type'] = 'vrouter'
         if 'binding:vnic_type' not in port_q_dict:
             port_q_dict['binding:vnic_type'] = 'normal'
-        if 'binding:host_id' not in port_q_dict:
+        if not port_q_dict.get('binding:host_id'):
             port_q_dict['binding:host_id'] = None
+            port_q_dict['binding:vif_type'] = 'unbound'
 
         dhcp_options_list = port_obj.get_virtual_machine_interface_dhcp_option_list()
         if dhcp_options_list and dhcp_options_list.dhcp_option:
@@ -2752,8 +2845,7 @@ class DBInterface(object):
         if port_q_dict['device_id']:
             port_q_dict['status'] = constants.PORT_STATUS_ACTIVE
         else:
-            port_q_dict['status'] = constants.PORT_STATUS_DOWN
-
+            port_q_dict['status'] = self._port_get_interface_status(port_obj)
         if self._contrail_extensions_enabled:
             port_q_dict.update(extra_dict)
         port_q_dict['port_security_enabled'] = port_obj.get_port_security_enabled()
@@ -4674,6 +4766,12 @@ class DBInterface(object):
         except RefsExistError:
             self._raise_contrail_exception('SecurityGroupInUse', id=sg_id)
 
+        # Once the security group is deleted, delete the zk node
+        self._zookeeper_client.delete_node(
+            '%s/%s' % (
+                self.security_group_lock_prefix, sg_id
+            ))
+
    #end security_group_delete
 
     @wait_for_api_server_connection
@@ -5096,7 +5194,7 @@ class DBInterface(object):
             aps.set_display_name(firewall_group['name'])
 
         if set(['admin_state_up', 'description']) & set(firewall_group.keys()):
-            id_perms = aps.get_id_perms() or IdPermsType()
+            id_perms = aps.get_id_perms() or IdPermsType(enable=True)
             if 'admin_state_up' in firewall_group:
                 id_perms.set_enable(firewall_group['admin_state_up'])
             if 'description' in firewall_group:
@@ -5328,14 +5426,17 @@ class DBInterface(object):
         if 'name' in filters:
             filters['display_name'] = filters.pop('name')
         shared = filters.pop('shared', [False])[0]
+        parent_ids = self._validate_project_ids(context, filters)
+        filters.pop('tenant_id', None)
+        filters.pop('project_id', None)
         apss = self._vnc_lib.application_policy_sets_list(
             detail=True,
             shared=shared,
-            parent_id=self._validate_project_ids(context, filters),
-            obj_uuids=filters.get('id'),
+            parent_id=parent_ids,
+            obj_uuids=filters.pop('id', None),
             back_ref_id=(
-                filters.get('ingress_firewall_policy_id', []) +
-                filters.get('egress_firewall_policy_id', [])) or None,
+                filters.pop('ingress_firewall_policy_id', []) +
+                filters.pop('egress_firewall_policy_id', [])) or None,
             filters=filters)
         for aps in apss:
             if (shared and aps.get_perms2().owner.replace('-', '') ==
@@ -5476,7 +5577,7 @@ class DBInterface(object):
             fp.set_display_name(firewall_policy['name'])
 
         if set(['audited', 'description']) & set(firewall_policy.keys()):
-            id_perms = fp.get_id_perms() or IdPermsType()
+            id_perms = fp.get_id_perms() or IdPermsType(enable=False)
             if 'audited' in firewall_policy:
                 id_perms.set_enable(firewall_policy['audited'])
             if 'description' in firewall_policy:
@@ -5578,12 +5679,15 @@ class DBInterface(object):
         if 'name' in filters:
             filters['display_name'] = filters.pop('name')
         shared = filters.pop('shared', [False])[0]
+        parent_ids = self._validate_project_ids(context, filters)
+        filters.pop('tenant_id', None)
+        filters.pop('project_id', None)
         fps = self._vnc_lib.firewall_policys_list(
             detail=True,
             shared=shared,
-            parent_id=self._validate_project_ids(context, filters),
-            obj_uuids=filters.get('id'),
-            back_ref_id=filters.get('firewall_rules'),
+            parent_id=parent_ids,
+            obj_uuids=filters.pop('id', None),
+            back_ref_id=filters.pop('firewall_rules', None),
             filters=filters)
         for fp in fps:
             if (shared and fp.get_perms2().owner.replace('-', '') ==
@@ -5796,7 +5900,7 @@ class DBInterface(object):
                 name=firewall_rule.get('name') or str(uuid.uuid4()),
                 parent_obj=project,
                 perms2=PermType2(owner=project.uuid),
-                service=FirewallServiceType(),
+                service=FirewallServiceType(protocol='any'),
                 direction='>',
             )
         else:  # update
@@ -5811,7 +5915,7 @@ class DBInterface(object):
             fr.set_display_name(firewall_rule['name'])
 
         if set(['enabled', 'description']) & set(firewall_rule.keys()):
-            id_perms = fr.get_id_perms() or IdPermsType()
+            id_perms = fr.get_id_perms() or IdPermsType(enable=True)
             if 'enabled' in firewall_rule:
                 id_perms.set_enable(firewall_rule['enabled'])
             if 'description' in firewall_rule:
@@ -5825,9 +5929,9 @@ class DBInterface(object):
 
         if (set(['protocol', 'source_port', 'destination_port']) &
                 set(firewall_rule.keys())):
-            service = fr.get_service() or FirewallServiceType()
+            service = fr.get_service() or FirewallServiceType(protocol='any')
             if 'protocol' in firewall_rule:
-                service.set_protocol(firewall_rule['protocol'])
+                service.set_protocol(firewall_rule['protocol'] or 'any')
             if 'source_port' in firewall_rule:
                 service.set_src_ports(
                     self._get_port_type(firewall_rule['source_port']))
@@ -6017,11 +6121,14 @@ class DBInterface(object):
         if 'name' in filters:
             filters['display_name'] = filters.pop('name')
         shared = filters.pop('shared', [False])[0]
+        parent_ids = self._validate_project_ids(context, filters)
+        filters.pop('tenant_id', None)
+        filters.pop('project_id', None)
         frs = self._vnc_lib.firewall_rules_list(
             detail=True,
             shared=shared,
-            parent_id=self._validate_project_ids(context, filters),
-            obj_uuids=filters.get('id'),
+            parent_id=parent_ids,
+            obj_uuids=filters.pop('id', None),
             filters=filters)
         for fr in frs:
             if (shared and fr.get_perms2().owner.replace('-', '') ==

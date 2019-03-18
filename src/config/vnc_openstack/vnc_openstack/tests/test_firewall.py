@@ -42,6 +42,11 @@ from vnc_openstack.neutron_plugin_db import _NEUTRON_FWAAS_TAG_TYPE
 
 
 class TestFirewallBase(test_case.NeutronBackendTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super(TestFirewallBase, cls).setUpClass(
+            extra_config_knobs=[('NEUTRON', 'fwaas_enabled', True)])
+
     def setUp(self):
         super(TestFirewallBase, self).setUp()
         self.project_id = self._vnc_lib.project_create(
@@ -1251,15 +1256,43 @@ class TestFirewallRule(TestFirewallBase):
             )
 
     def test_cannot_update_firewall_rule_with_default_name(self):
-        neutron_fp = self.create_resource('firewall_rule', self.project_id)
+        neutron_fr = self.create_resource('firewall_rule', self.project_id)
         for name in [_NEUTRON_FIREWALL_DEFAULT_IPV4_RULE_NAME,
                      _NEUTRON_FIREWALL_DEFAULT_IPV6_RULE_NAME]:
             self.update_resource(
                 'firewall_rule',
-                neutron_fp['id'],
+                neutron_fr['id'],
                 self.project_id,
                 extra_res_fields={
                     'name': name,
                 },
                 status="400 Bad Request",
             )
+
+    def test_protocol_set_to_any_if_not_defined_or_set_to_any(self):
+        neutron_fr1 = self.create_resource('firewall_rule', self.project_id)
+        self.assertEquals(neutron_fr1['protocol'], 'any')
+        fr1 = self._vnc_lib.firewall_rule_read(id=neutron_fr1['id'])
+        self.assertEquals(fr1.get_service().get_protocol(), 'any')
+
+        neutron_fr2 = self.create_resource(
+            'firewall_rule',
+            self.project_id,
+            extra_res_fields={
+                'protocol': None,
+            },
+        )
+        self.assertEquals(neutron_fr2['protocol'], 'any')
+        fr2 = self._vnc_lib.firewall_rule_read(id=neutron_fr2['id'])
+        self.assertEquals(fr2.get_service().get_protocol(), 'any')
+
+        neutron_fr3 = self.create_resource(
+            'firewall_rule',
+            self.project_id,
+            extra_res_fields={
+                'protocol': 'any',
+            },
+        )
+        self.assertEquals(neutron_fr3['protocol'], 'any')
+        fr3 = self._vnc_lib.firewall_rule_read(id=neutron_fr3['id'])
+        self.assertEquals(fr3.get_service().get_protocol(), 'any')

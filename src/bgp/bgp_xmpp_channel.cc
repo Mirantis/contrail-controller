@@ -275,7 +275,8 @@ public:
         PeerStatsData peer_stats_data;
         peer_stats_data.set_name(ToUVEKey());
         peer_stats_data.set_deleted(true);
-        PeerStatsUve::Send(peer_stats_data, "ObjectXmppPeerInfo");
+        assert(!peer_stats_data.get_name().empty());
+        BGP_UVE_SEND2(PeerStatsUve, peer_stats_data, "ObjectXmppPeerInfo");
     }
 
     virtual bool MembershipPathCallback(DBTablePartBase *tpart, BgpRoute *rt,
@@ -549,7 +550,8 @@ BgpXmppChannel::~BgpXmppChannel() {
 }
 
 void BgpXmppChannel::XMPPPeerInfoSend(const XmppPeerInfoData &peer_info) const {
-    XMPPPeerInfo::Send(peer_info);
+    assert(!peer_info.get_name().empty());
+    BGP_UVE_SEND(XMPPPeerInfo, peer_info);
 }
 
 const XmppSession *BgpXmppChannel::GetSession() const {
@@ -1973,9 +1975,15 @@ bool BgpXmppChannel::ProcessEnetItem(string vrf_name,
             attrs.push_back(&med);
 
         BgpAttrNextHop nexthop(nh_address.to_v4().to_ulong());
-        if (type6)
+        if (type6) {
             flags |= BgpPath::CheckGlobalErmVpnRoute;
-        else {
+            if (item.entry.replicator_address.empty() &&
+                    item.entry.edge_replication_not_supported) {
+                // Only for test to inject remote smet routes
+                flags &= ~BgpPath::CheckGlobalErmVpnRoute;
+                attrs.push_back(&nexthop);
+            }
+        } else {
             attrs.push_back(&nexthop);
         }
 
@@ -2015,7 +2023,7 @@ bool BgpXmppChannel::ProcessEnetItem(string vrf_name,
             attrs.push_back(&ext);
 
         PmsiTunnelSpec pmsi_spec;
-        if (mac_addr.IsBroadcast() || type6) {
+        if (mac_addr.IsBroadcast()) {
             if (!item.entry.replicator_address.empty()) {
                 IpAddress replicator_address;
                 if (!XmppDecodeAddress(BgpAf::IPv4,
@@ -2040,10 +2048,6 @@ bool BgpXmppChannel::ProcessEnetItem(string vrf_name,
                 if (!item.entry.edge_replication_not_supported) {
                     pmsi_spec.tunnel_flags |=
                         PmsiTunnelSpec::EdgeReplicationSupported;
-                } else {
-                    // Only for test to inject remote smet routes
-                    flags &= ~BgpPath::CheckGlobalErmVpnRoute;
-                    attrs.push_back(&nexthop);
                 }
                 pmsi_spec.SetIdentifier(nh_address.to_v4());
             }
@@ -3187,14 +3191,16 @@ void BgpXmppChannelManager::FillPeerInfo(const BgpXmppChannel *channel) const {
     XmppPeerInfoData peer_info;
     peer_info.set_name(channel->Peer()->ToUVEKey());
     peer_info.set_peer_stats_info(stats);
-    XMPPPeerInfo::Send(peer_info);
+    assert(!peer_info.get_name().empty());
+    BGP_UVE_SEND(XMPPPeerInfo, peer_info);
 
     PeerStatsData peer_stats_data;
     peer_stats_data.set_name(channel->Peer()->ToUVEKey());
     peer_stats_data.set_encoding("XMPP");
     PeerStats::FillPeerUpdateStats(channel->Peer()->peer_stats(),
                                    &peer_stats_data);
-    PeerStatsUve::Send(peer_stats_data, "ObjectXmppPeerInfo");
+    assert(!peer_stats_data.get_name().empty());
+    BGP_UVE_SEND2(PeerStatsUve, peer_stats_data, "ObjectXmppPeerInfo");
 }
 
 bool BgpXmppChannelManager::CollectStats(BgpRouterState *state, bool first)

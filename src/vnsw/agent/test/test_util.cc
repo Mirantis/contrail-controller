@@ -155,6 +155,8 @@ static void BuildLinkToMetadata() {
                       "virtual-network-network-ipam");
     AddLinkToMetadata("virtual-network-network-ipam", "network-ipam",
                       "virtual-network-network-ipam");
+    AddLinkToMetadata("virtual-network", "multicast-policy",
+                      "virtual-network-multicast-policy");
     AddLinkToMetadata("virtual-router", "virtual-router-network-ipam",
                       "virtual-vrouter-network-ipam");
     AddLinkToMetadata("virtual-router-network-ipam", "network-ipam",
@@ -170,6 +172,8 @@ static void BuildLinkToMetadata() {
     AddLinkToMetadata("physical-router", "logical-interface");
     AddLinkToMetadata("physical-interface", "logical-interface");
     AddLinkToMetadata("logical-interface", "virtual-machine-interface");
+    AddLinkToMetadata("virtual-port-group", "physical-interface");
+    AddLinkToMetadata("virtual-port-group", "virtual-machine-interface");
 
     AddLinkToMetadata("floating-ip-pool", "floating-ip");
     AddLinkToMetadata("floating-ip", "virtual-machine-interface");
@@ -225,12 +229,8 @@ static void BuildLinkToMetadata() {
                       "logical-router-virtual-network");
 }
 
-string GetMetadata(const char *node1, const char *node2,
-                   const char *mdata) {
+const char *GetMetadata(const char *node1, const char *node2) {
     BuildLinkToMetadata();
-
-    if (mdata != NULL)
-        return mdata;
 
     LinkToMetadata::iterator it = link_to_metadata_.find(string(node1) + "-" +
                                                          string(node2));
@@ -242,33 +242,15 @@ string GetMetadata(const char *node1, const char *node2,
         assert(0);
     }
 
-    return it->second;
+    return it->second.c_str();
 }
 
-void AddLinkString(char *buff, int &len, const char *node_name1,
-                   const char *name1, const char *node_name2,
-                   const char *name2, const char *mdata) {
-    sprintf(buff + len,
-            "       <link>\n"
-            "           <node type=\"%s\">\n"
-            "               <name>%s</name>\n"
-            "           </node>\n"
-            "           <node type=\"%s\">\n"
-            "               <name>%s</name>\n"
-            "           </node>\n"
-            "           <metadata type=\"%s\"/>\n"
-            "       </link>\n", node_name1, name1, node_name2, name2,
-            GetMetadata(node_name1, node_name2, mdata).c_str());
-
-    len = strlen(buff);
-}
-
-void DelLinkString(char *buff, int &len, const char *node_name1,
+void LinkString(char *buff, int &len, const char *node_name1,
                    const char *name1, const char *node_name2,
                    const char *name2, const char* mdata) {
     const char *mdata_value = NULL;
     if (!mdata) {
-        mdata_value = GetMetadata(node_name1, node_name2).c_str();
+        mdata_value = GetMetadata(node_name1, node_name2);
     } else {
         mdata_value = mdata;
     }
@@ -430,6 +412,30 @@ void AddNodeString(char *buff, int &len, const char *nodename, const char *name,
     len += final_str.size();
 }
 
+void AddNodeString(char *buff, int &len, const char *nodename, const char *name,
+                   MulticastPolicy *msg, int count) {
+
+    std::stringstream str;
+    str << "       <node type=\"" << nodename << "\">\n";
+    str << "           <name>" << name << "</name>\n";
+    str << "           <value>\n";
+    for (int i = 0; i < count; i++) {
+        std::string action = (msg[i].action == true) ? "pass" : "deny";
+
+        str << "               <multicast-source-groups>\n";
+        str << "                   <source-address>" << msg[i].src << "</source-address>\n";
+        str << "                   <group-address>" << msg[i].grp << "</group-address>\n";
+        str << "                   <action>" << action << "</action>\n";
+        str << "               </multicast-source-groups>\n";
+    }
+    str << "           </value>\n";
+    str << "       </node>\n";
+
+    std::string final_str = str.str();
+    memcpy(buff + len, final_str.data(), final_str.size());
+    len += final_str.size();
+}
+
 void AddLinkNodeString(char *buff, int &len, const char *nodename, const char *name,
                        const char *attr) {
     std::stringstream str;
@@ -464,7 +470,6 @@ void ApplyXmlString(const char *buff) {
     pugi::xml_document xdoc_;
     pugi::xml_parse_result result = xdoc_.load(buff);
     EXPECT_TRUE(result);
-    //cout << buff << endl;
     Agent::GetInstance()->ifmap_parser()->ConfigParse(xdoc_.first_child(), 0);
     return;
 }
@@ -475,7 +480,7 @@ void AddLink(const char *node_name1, const char *name1,
     int len = 0;
 
     AddXmlHdr(buff, len);
-    AddLinkString(buff, len, node_name1, name1, node_name2, name2, mdata);
+    LinkString(buff, len, node_name1, name1, node_name2, name2, mdata);
     AddXmlTail(buff, len);
     //LOG(DEBUG, buff);
     ApplyXmlString(buff);
@@ -488,7 +493,7 @@ void DelLink(const char *node_name1, const char *name1,
     int len = 0;
 
     DelXmlHdr(buff, len);
-    DelLinkString(buff, len, node_name1, name1, node_name2, name2, mdata);
+    LinkString(buff, len, node_name1, name1, node_name2, name2, mdata);
     DelXmlTail(buff, len);
     //LOG(DEBUG, buff);
     ApplyXmlString(buff);
@@ -1831,6 +1836,80 @@ bool EcmpTunnelRouteAdd(Agent *agent, const BgpPeer *peer, const string &vrf,
     return ret;
 }
 
+bool MplsVpnEcmpTunnelAdd(const BgpPeer *peer, const string &vrf,
+                        const Ip4Address &prefix, uint8_t plen,
+                        Ip4Address  &remote_server_1, uint32_t label1,
+                        Ip4Address &remote_server_2, uint32_t label2,
+                        const string &vn) {
+    std::vector<IpAddress>tunnel_list;
+    std::vector<uint32_t>label_list;
+    tunnel_list.push_back(remote_server_1);
+    tunnel_list.push_back(remote_server_2);
+    label_list.push_back(label1);
+    label_list.push_back(label2);
+
+    SecurityGroupList sg;
+    TagList tag;
+    VnListType vn_list;
+    vn_list.insert(vn);
+    ControllerEcmpRoute *data =
+        new ControllerEcmpRoute(peer, vn_list, EcmpLoadBalance(), tag, sg,
+                                PathPreference(), 1 << TunnelType::MPLS_OVER_MPLS,
+                                tunnel_list, label_list, prefix.to_string(),vrf);
+    InetUnicastAgentRouteTable::AddRemoteVmRouteReq(peer, vrf, prefix, plen, data);
+    client->WaitForIdle();
+    return true;
+}
+bool MplsLabelInetEcmpTunnelAdd(const BgpPeer *peer, const string &vrf,
+                        const Ip4Address &prefix, uint8_t plen,
+                        Ip4Address  &remote_server_1, uint32_t label1,
+                        Ip4Address &remote_server_2, uint32_t label2,
+                        const string &vn) {
+                Agent *agent = Agent::GetInstance();
+                TunnelType::TypeBmap encap = 1 << TunnelType::MPLS_OVER_MPLS;
+    LabelledTunnelNHKey *nh_key1 = new LabelledTunnelNHKey(
+                                agent->fabric_vrf_name(),
+                                agent->router_id(),
+                                remote_server_1,
+                                false,
+                                TunnelType::ComputeType(encap),
+                                MacAddress(),
+                                label1);
+    std::auto_ptr<const NextHopKey> nh_key_ptr1(nh_key1);
+    ComponentNHKeyPtr component_nh_key1(new ComponentNHKey(label1,
+                                                        nh_key_ptr1));
+    LabelledTunnelNHKey *nh_key2 = new LabelledTunnelNHKey(
+                                agent->fabric_vrf_name(),
+                                agent->router_id(),
+                                remote_server_2,
+                                false,
+                                TunnelType::ComputeType(encap),
+                                MacAddress(),
+                                label1);
+    std::auto_ptr<const NextHopKey> nh_key_ptr2(nh_key2);
+    ComponentNHKeyPtr component_nh_key2(new ComponentNHKey(label2,
+                                                        nh_key_ptr2));
+    ComponentNHKeyList comp_nh_list;
+    comp_nh_list.push_back(component_nh_key1);
+    comp_nh_list.push_back(component_nh_key2);
+    COMPOSITETYPE type = Composite::LU_ECMP;
+    SecurityGroupList sg;
+    TagList tag;
+    VnListType vn_list;
+    vn_list.insert(vn);
+    DBRequest nh_req(DBRequest::DB_ENTRY_ADD_CHANGE);
+    nh_req.key.reset(new CompositeNHKey(type, false,
+                                        comp_nh_list, vrf));
+    nh_req.data.reset(new CompositeNHData());
+
+    ControllerEcmpRoute *data =
+        new ControllerEcmpRoute(peer, vn_list, EcmpLoadBalance(), tag, sg,
+                                PathPreference(), 1 << TunnelType::MPLS_OVER_MPLS,
+                                nh_req, prefix.to_string());
+    InetUnicastAgentRouteTable::AddMplsRouteReq(peer, vrf, prefix, plen, data);
+    client->WaitForIdle();
+    return true;
+}
 bool Inet4TunnelRouteAdd(const BgpPeer *peer, const string &vm_vrf, const Ip4Address &vm_addr,
                          uint8_t plen, const Ip4Address &server_ip, TunnelType::TypeBmap bmap,
                          uint32_t label, const string &dest_vn_name,
@@ -1934,6 +2013,21 @@ bool AddArp(const char *ip, const char *mac_str, const char *ifname) {
                               Ip4Address::from_string(ip, ec), mac,
                               Agent::GetInstance()->fabric_vrf_name(),
                               *intf, true, 32, false, vn_list, SecurityGroupList(),
+                              TagList());
+
+    return true;
+}
+
+bool AddArpReq(const char *ip, const char *ifname) {
+    Interface *intf;
+    PhysicalInterfaceKey key(ifname);
+    intf = static_cast<Interface *>(Agent::GetInstance()->interface_table()->FindActiveEntry(&key));
+    boost::system::error_code ec;
+    VnListType vn_list;
+    InetUnicastAgentRouteTable::AddArpReq(Agent::GetInstance()->fabric_vrf_name(),
+                              Ip4Address::from_string(ip, ec),
+                              Agent::GetInstance()->fabric_vrf_name(),
+                              intf, false, vn_list, SecurityGroupList(),
                               TagList());
 
     return true;
@@ -2654,6 +2748,16 @@ void DeleteLogicalInterface(const char *name) {
     DelNode("logical-interface", name);
 }
 
+void AddVirtualPortGroup(const char *name, int id, const char *display_name) {
+    char buf[1024];
+    sprintf(buf, "<display-name>%s</display-name>", display_name);
+    AddNode("virtual-port-group", name, id, buf);
+}
+
+void DeleteVirtualPortGroup(const char *name) {
+    DelNode("virtual-port-group", name);
+}
+
 void AddVmPortVrf(const char *name, const string &ip, uint16_t tag,
                   const string &v6_ip, bool swap) {
     char buff[1024];
@@ -2760,14 +2864,14 @@ void AddIPAM(const char *name, IpamInfo *ipam, int ipam_size, const char *ipam_a
     }
     AddNodeString(buff, len, "virtual-network-network-ipam", node_name,
                             ipam, ipam_size, vm_host_routes, add_subnet_tags);
-    AddLinkString(buff, len, "virtual-network", name,
+    LinkString(buff, len, "virtual-network", name,
                   "virtual-network-network-ipam", node_name,
                   "virtual-network-network-ipam");
-    AddLinkString(buff, len, "network-ipam", ipam_name,
+    LinkString(buff, len, "network-ipam", ipam_name,
                   "virtual-network-network-ipam", node_name,
                   "virtual-network-network-ipam");
     if (vdns_name) {
-        AddLinkString(buff, len, "network-ipam", ipam_name,
+        LinkString(buff, len, "network-ipam", ipam_name,
                       "virtual-DNS", vdns_name, "virtual-DNS");
     }
     AddXmlTail(buff, len);
@@ -2783,12 +2887,12 @@ void DelIPAM(const char *name, const char *vdns_name) {
     sprintf(node_name, "default-network-ipam,%s", name);
     sprintf(ipam_name, "default-network-ipam");
     DelXmlHdr(buff, len);
-    DelLinkString(buff, len, "virtual-network", name,
+    LinkString(buff, len, "virtual-network", name,
                  "virtual-network-network-ipam", node_name);
-    DelLinkString(buff, len, "network-ipam", ipam_name,
+    LinkString(buff, len, "network-ipam", ipam_name,
                  "virtual-network-network-ipam", node_name);
     if (vdns_name) {
-        DelLinkString(buff, len, "network-ipam", ipam_name,
+        LinkString(buff, len, "network-ipam", ipam_name,
                       "virtual-DNS", vdns_name);
     }
     DelNodeString(buff, len, "virtual-network-network-ipam", node_name);
@@ -2843,6 +2947,37 @@ void AddEncryptRemoteTunnelConfig(const EncryptTunnelEndpoint *endpoints, int co
                   1024, global_config.str().c_str());
     AddXmlTail(buf, len);
     ApplyXmlString(buf);
+}
+
+void AddMulticastPolicy(const char *name, uint32_t id, MulticastPolicy *msg,
+                                    int msg_size) {
+
+    std::stringstream policy;
+    policy << "<multicast-source-groups>";
+    for (int i = 0; i < msg_size; ++i) {
+        std::string action = (msg[i].action == true) ? "pass" : "deny";
+
+        policy << "<multicast-source-group>";
+        policy << "<source-address>";
+        policy << msg[i].src;
+        policy << "</source-address>";
+        policy << "<group-address>";
+        policy << msg[i].grp;
+        policy << "</group-address>";
+        policy << "<action>";
+        policy << action;
+        policy << "</action>";
+        policy << "</multicast-source-group>";
+    }
+    policy << "</multicast-source-groups>";
+
+    AddNode("multicast-policy", name, id, policy.str().c_str());
+    return;
+}
+
+void DelMulticastPolicy(const char *name) {
+    DelNode("multicast-policy", name);
+    return;
 }
 
 
@@ -4698,44 +4833,26 @@ void AddAddressVrfAssignAcl(const char *intf_name, int intf_id,
             "    <vrf-assign-table>\n"
             "        <vrf-assign-rule>\n"
             "            <match-condition>\n"
-            "                 <protocol>\n"
-            "                     %d\n"
-            "                 </protocol>\n"
+            "                 <protocol>%d</protocol>\n"
             "                 <src-address>\n"
             "                     <subnet>\n"
-            "                        <ip-prefix>\n"
-            "                         %s\n"
-            "                        </ip-prefix>\n"
-            "                        <ip-prefix-len>\n"
-            "                         24\n"
-            "                        </ip-prefix-len>\n"
+            "                        <ip-prefix>%s</ip-prefix>\n"
+            "                        <ip-prefix-len>24</ip-prefix-len>\n"
             "                     </subnet>\n"
             "                 </src-address>\n"
             "                 <src-port>\n"
-            "                     <start-port>\n"
-            "                         %d\n"
-            "                     </start-port>\n"
-            "                     <end-port>\n"
-            "                         %d\n"
-            "                     </end-port>\n"
+            "                     <start-port>%d</start-port>\n"
+            "                     <end-port>%d</end-port>\n"
             "                 </src-port>\n"
             "                 <dst-address>\n"
             "                     <subnet>\n"
-            "                        <ip-prefix>\n"
-            "                         %s\n"
-            "                        </ip-prefix>\n"
-            "                        <ip-prefix-len>\n"
-            "                         24\n"
-            "                        </ip-prefix-len>\n"
+            "                        <ip-prefix>%s</ip-prefix>\n"
+            "                        <ip-prefix-len>24</ip-prefix-len>\n"
             "                     </subnet>\n"
             "                 </dst-address>\n"
             "                 <dst-port>\n"
-            "                     <start-port>\n"
-            "                        %d\n"
-            "                     </start-port>\n"
-            "                     <end-port>\n"
-            "                        %d\n"
-            "                     </end-port>\n"
+            "                     <start-port>%d</start-port>\n"
+            "                     <end-port>%d</end-port>\n"
             "                 </dst-port>\n"
             "             </match-condition>\n"
             "             <vlan-tag>0</vlan-tag>\n"

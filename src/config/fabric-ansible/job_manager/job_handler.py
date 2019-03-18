@@ -26,10 +26,11 @@ from job_manager.job_messages import MsgBundle
 class JobHandler(object):
 
     def __init__(self, logger, vnc_api, job_template, execution_id, input,
-                 job_utils, device_json, auth_token, api_server_host,
-                 job_log_utils, sandesh_args,fabric_fq_name,
+                 job_utils, device_json, auth_token, contrail_cluster_id,
+                 api_server_host, job_log_utils, sandesh_args,fabric_fq_name,
                  playbook_timeout, playbook_seq, vnc_api_init_params,
-                 zk_client, db_init_params, cluster_id):
+                 zk_client):
+        self.is_multi_device_playbook = False
         self._logger = logger
         self._vnc_api = vnc_api
         self._job_template = job_template
@@ -38,6 +39,7 @@ class JobHandler(object):
         self._job_utils = job_utils
         self._device_json = device_json
         self._auth_token = auth_token
+        self._contrail_cluster_id = contrail_cluster_id
         self._api_server_host = api_server_host
         self._job_log_utils = job_log_utils
         self._sandesh_args = sandesh_args
@@ -47,8 +49,6 @@ class JobHandler(object):
         self._vnc_api_init_params = vnc_api_init_params
         self._prouter_info = {}
         self._zk_client = zk_client
-        self._db_init_params = db_init_params
-        self._cluster_id = cluster_id
     # end __init__
 
 
@@ -73,7 +73,7 @@ class JobHandler(object):
         # For multi device job templates, we need to send the prouter job
         # uves as soon as they are complete in order to prevent them
         # from waiting until the job completes.
-        if self._job_template.get_job_template_multi_device_job():
+        if self.is_multi_device_playbook:
 
             pr_uve_name = self.get_pr_uve_name_from_device_name(
                 playbook_info)
@@ -200,13 +200,13 @@ class JobHandler(object):
                 'job_template_fqname': self._job_template.fq_name,
                 'fabric_fq_name': self._fabric_fq_name,
                 'auth_token': self._auth_token,
+                'contrail_cluster_id': self._contrail_cluster_id,
                 'api_server_host': self._api_server_host,
                 'job_execution_id': self._execution_id,
                 'args': self._sandesh_args,
                 'vnc_api_init_params': self._vnc_api_init_params,
-                'db_init_params': self._db_init_params,
-                'cluster_id': self._cluster_id,
-                'playbook_job_percentage': job_percent_per_task
+                'playbook_job_percentage': job_percent_per_task,
+                'job_device_json': self._device_json
             }
             playbooks = self._job_template.get_job_template_playbooks()
 
@@ -277,6 +277,7 @@ class JobHandler(object):
             playbook_input = {'playbook_input': extra_vars}
 
             playbook_info = dict()
+            self.is_multi_device_playbook = play_info.multi_device_playbook
             playbook_info['uri'] = play_info.playbook_uri
             playbook_info['extra_vars'] = playbook_input
 
@@ -502,7 +503,7 @@ class JobHandler(object):
 
             # create prouter UVE in job_manager only if it is not a multi
             # device job template
-            if not self._job_template.get_job_template_multi_device_job():
+            if not self.is_multi_device_playbook:
                 status = "SUCCESS" if playbook_process.returncode == 0 \
                     else "FAILURE"
                 self.send_prouter_uve(exec_id, status)

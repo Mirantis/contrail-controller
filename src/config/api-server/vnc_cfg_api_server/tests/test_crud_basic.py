@@ -2,15 +2,12 @@
 # Copyright (c) 2013 Juniper Networks, Inc. All rights reserved.
 #
 import gevent
-import gevent.monkey
-gevent.monkey.patch_all()
 import os
 import sys
 import socket
 import errno
 import uuid
 import logging
-import coverage
 import random
 import netaddr
 import mock
@@ -28,7 +25,6 @@ import copy
 from lxml import etree
 import inspect
 import pycassa
-import kombu
 import requests
 import bottle
 import stevedore
@@ -51,7 +47,7 @@ sys.path.append('../common/tests')
 from test_utils import *
 import test_common
 import test_case
-from vnc_cfg_api_server.vnc_cfg_types import GlobalSystemConfigServer
+from vnc_cfg_api_server.resources import GlobalSystemConfigServer
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -1809,7 +1805,7 @@ class TestVncCfgApiServer(test_case.ApiServerTestCase):
         self.assertThat(ret_vn.keys(), Not(Contains(
             'virtual_machine_interface_back_refs')))
 
-        # Properties and references are always returned irrespective of what
+        # id_perms and perms2 are always returned irrespective of what
         # fields are requested
         property = 'virtual_network_network_id'
         reference = 'network_ipam_refs'
@@ -1824,7 +1820,9 @@ class TestVncCfgApiServer(test_case.ApiServerTestCase):
         self.assertEqual(resp.status_code, 200)
         ret_vn = json.loads(resp.text)['virtual-network']
         self.assertThat(ret_vn.keys(), Contains(property))
-        self.assertThat(ret_vn.keys(), Contains(reference))
+        self.assertThat(ret_vn.keys(), Contains('id_perms'))
+        self.assertThat(ret_vn.keys(), Contains('perms2'))
+        self.assertThat(ret_vn.keys(), Not(Contains(reference)))
         self.assertThat(ret_vn.keys(), Not(Contains(children)))
         self.assertThat(ret_vn.keys(), Not(Contains(back_reference)))
 
@@ -1835,7 +1833,9 @@ class TestVncCfgApiServer(test_case.ApiServerTestCase):
         resp = requests.get(url)
         self.assertEqual(resp.status_code, 200)
         ret_vn = json.loads(resp.text)['virtual-network']
-        self.assertThat(ret_vn.keys(), Contains(property))
+        self.assertThat(ret_vn.keys(), Not(Contains(property)))
+        self.assertThat(ret_vn.keys(), Contains('id_perms'))
+        self.assertThat(ret_vn.keys(), Contains('perms2'))
         self.assertThat(ret_vn.keys(), Contains(reference))
         self.assertThat(ret_vn.keys(), Not(Contains(children)))
         self.assertThat(ret_vn.keys(), Not(Contains(back_reference)))
@@ -1847,8 +1847,10 @@ class TestVncCfgApiServer(test_case.ApiServerTestCase):
         resp = requests.get(url)
         self.assertEqual(resp.status_code, 200)
         ret_vn = json.loads(resp.text)['virtual-network']
-        self.assertThat(ret_vn.keys(), Contains(property))
-        self.assertThat(ret_vn.keys(), Contains(reference))
+        self.assertThat(ret_vn.keys(), Not(Contains(property)))
+        self.assertThat(ret_vn.keys(), Not(Contains(reference)))
+        self.assertThat(ret_vn.keys(), Contains('id_perms'))
+        self.assertThat(ret_vn.keys(), Contains('perms2'))
         self.assertThat(ret_vn.keys(), Contains(children))
         self.assertThat(ret_vn.keys(), Not(Contains(back_reference)))
 
@@ -1859,8 +1861,10 @@ class TestVncCfgApiServer(test_case.ApiServerTestCase):
         resp = requests.get(url)
         self.assertEqual(resp.status_code, 200)
         ret_vn = json.loads(resp.text)['virtual-network']
-        self.assertThat(ret_vn.keys(), Contains(property))
-        self.assertThat(ret_vn.keys(), Contains(reference))
+        self.assertThat(ret_vn.keys(), Not(Contains(property)))
+        self.assertThat(ret_vn.keys(), Not(Contains(reference)))
+        self.assertThat(ret_vn.keys(), Contains('id_perms'))
+        self.assertThat(ret_vn.keys(), Contains('perms2'))
         self.assertThat(ret_vn.keys(), Not(Contains(children)))
         self.assertThat(ret_vn.keys(), Contains(back_reference))
 
@@ -1873,6 +1877,8 @@ class TestVncCfgApiServer(test_case.ApiServerTestCase):
         resp = requests.get(url)
         self.assertEqual(resp.status_code, 200)
         ret_vn = json.loads(resp.text)['virtual-network']
+        self.assertThat(ret_vn.keys(), Contains('id_perms'))
+        self.assertThat(ret_vn.keys(), Contains('perms2'))
         self.assertThat(ret_vn.keys(), Contains(property))
         self.assertThat(ret_vn.keys(), Contains(reference))
         self.assertThat(ret_vn.keys(), Contains(children))
@@ -4429,7 +4435,8 @@ class TestCacheWithMetadata(test_case.ApiServerTestCase):
             self.assertEqual(ret_ipam_obj.display_name, ipam_obj.display_name)
             # access for ipam with backref should hit cache but stale
             ret_ipam_obj = self._vnc_lib.network_ipam_read(
-                fq_name=ipam_obj.fq_name, fields=['virtual_network_back_refs'])
+                fq_name=ipam_obj.fq_name, fields=['display_name',
+                'virtual_network_back_refs'])
             self.assertEqual(ret_ipam_obj.display_name, 'stale-check-name')
     # end test_stale_for_backref_on_ref_update
 

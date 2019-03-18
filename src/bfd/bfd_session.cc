@@ -64,6 +64,12 @@ bool Session::SendTimerExpired() {
 
 bool Session::RecvTimerExpired() {
 
+    if (local_state_non_locking() == kUp) {
+        // Bfd state will transition to Down state,
+        // restore to default values
+        remoteSession_.minRxInterval = boost::posix_time::seconds(1);
+        remoteSession_.minTxInterval = boost::posix_time::seconds(0);
+    }
     sm_->ProcessTimeout();
     stats_.receive_timer_expired_count++;
 
@@ -169,12 +175,15 @@ ResultCode Session::ProcessControlPacket(const ControlPacket *packet) {
     remoteSession_.detectionTimeMultiplier = packet->detection_time_multiplier;
     remoteSession_.state = packet->state;
     if ((local_state_non_locking() == kUp) && packet->poll) {
+        remoteSession_.minTxInterval = packet->desired_min_tx_interval;
         if (packet->required_min_rx_interval < remoteSession_.minRxInterval) {
             remoteSession_.minRxInterval = packet->required_min_rx_interval;
             ScheduleSendTimer();
-        }
-        if (packet->desired_min_tx_interval > remoteSession_.minTxInterval) {
-            remoteSession_.minTxInterval = packet->desired_min_tx_interval;
+        } else {
+            // After sending the BFD pkt with previous agreed rate, update
+            // the SendTimer() with new remoteSession_.minRxInterval so as to
+            // not impact the remote Session's detection time.
+            remoteSession_.minRxInterval = packet->required_min_rx_interval;
         }
     } else if (local_state_non_locking() == kInit ||
                local_state_non_locking() == kDown) {

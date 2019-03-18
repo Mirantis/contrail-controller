@@ -29,7 +29,7 @@ def default_options():
         'cassandra_server_list': '127.0.0.1:9160',
         'api_server_ip': '127.0.0.1',
         'api_server_port': '8082',
-        'api_server_use_ssl': False,
+        'api_server_use_ssl': None,
         'analytics_server_ip': '127.0.0.1',
         'analytics_server_port': '8081',
         'analytics_username': None,
@@ -69,6 +69,9 @@ def default_options():
         'tftp_dir': None,
         'dhcp_leases_file': None,
         'ztp_timeout': 300,
+        'rabbit_health_check_interval': 0,
+        'job_manager_db_conn_retry_timeout': '10',
+        'job_manager_db_conn_max_retries': '6',
     }
 # end default_options
 
@@ -167,6 +170,12 @@ def add_parser_arguments(parser):
                         help="Path of the dhcp leases file")
     parser.add_argument("--ztp_timeout",
                         help="Timeout for the DHCP Lease lookup during ZTP")
+    parser.add_argument("--rabbit_health_check_interval",
+                        help="Interval between rabbitmq heartbeat checks")
+    parser.add_argument("--job_manager_db_conn_retry_timeout",
+                        help="Timeout between job manager retries")
+    parser.add_argument("--job_manager_db_conn_max_retries",
+                        help="Max number of job manager retries")
     SandeshConfig.add_parser_arguments(parser)
 # end add_parser_arguments
 

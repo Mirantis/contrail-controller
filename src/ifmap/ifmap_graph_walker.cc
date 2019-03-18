@@ -363,6 +363,7 @@ void IFMapGraphWalker::AddNodesToWhitelist() {
         ("global-system-config",
          list_of("global-system-config-global-vrouter-config")
                 ("global-system-config-global-qos-config")
+                ("global-system-config-bgp-router")
                 ("qos-config-global-system-config"))
         ("provider-attachment", std::set<std::string>())
         ("service-instance", list_of("service-instance-service-template")
@@ -410,14 +411,21 @@ void IFMapGraphWalker::AddNodesToWhitelist() {
          ("virtual-network-bridge-domain")
          ("virtual-network-security-logging-object")
          ("virtual-network-tag")
-         ("virtual-network-provider-network"))
+         ("virtual-network-provider-network")
+         ("virtual-network-multicast-policy"))
         ("floating-ip", list_of("floating-ip-pool-floating-ip")
          ("instance-ip-floating-ip"))
         ("alias-ip", list_of("alias-ip-pool-alias-ip"))
         ("customer-attachment", std::set<std::string>())
         ("virtual-machine-interface-routing-instance",
          list_of("virtual-machine-interface-routing-instance"))
-        ("physical-interface", list_of("physical-interface-logical-interface"))
+        ("physical-interface", list_of("physical-interface-logical-interface")
+                                      ("virtual-port-group-physical-interface"))
+        ("virtual-port-group-physical-interface",
+         list_of("virtual-port-group-physical-interface"))
+        ("virtual-port-group",
+         list_of("virtual-port-group-virtual-machine-interface")
+                ("virtual-port-group-physical-interface"))
         ("domain", list_of("domain-namespace")("domain-virtual-DNS"))
         ("floating-ip-pool", list_of("virtual-network-floating-ip-pool"))
         ("alias-ip-pool", list_of("virtual-network-alias-ip-pool"))
@@ -427,7 +435,7 @@ void IFMapGraphWalker::AddNodesToWhitelist() {
                                   ("logical-router-interface"))
         ("virtual-network-network-ipam", list_of("virtual-network-network-ipam"))
         ("access-control-list", std::set<std::string>())
-        ("routing-instance", list_of("instance-bgp-router"))
+        ("routing-instance", std::set<std::string>())
         ("namespace", std::set<std::string>())
         ("virtual-DNS", list_of("virtual-DNS-virtual-DNS-record"))
         ("network-ipam", list_of("network-ipam-virtual-DNS"))
@@ -472,5 +480,6 @@ void IFMapGraphWalker::AddNodesToWhitelist() {
                            ("project-logical-router"))
         ("port-tuple", list_of("service-instance-port-tuple")
                               ("port-tuple-interface"))
-        ("policy-management", std::set<std::string>());
+        ("policy-management", std::set<std::string>())
+        ("multicast-policy", list_of("virtual-network-multicast-policy"));
 }

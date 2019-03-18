@@ -60,10 +60,13 @@ class AnsibleConf(AnsibleBase):
         self.bgp_map = {}
         self.ri_map = {}
         self.pi_map = {}
+        self.forwarding_options_config = None
         self.firewall_config = None
         self.inet4_forwarding_filter = None
         self.inet6_forwarding_filter = None
         self.vlan_map = {}
+        self.sc_zone_map = {}
+        self.sc_policy_map = {}
         self.bgp_peers = {}
         self.external_peers = {}
         self.timeout = 120
@@ -206,7 +209,6 @@ class AnsibleConf(AnsibleBase):
     def build_dci_bgp_config(self):
         if not self.physical_router.has_rb_role("DCI-Gateway"):
             return
-        self.physical_router.evaluate_dci_ip_map()
         dci_list = self.physical_router.get_dci_list()
         for dci_uuid in dci_list or []:
             params = self.physical_router.get_dci_bgp_params(dci_uuid)
@@ -247,7 +249,7 @@ class AnsibleConf(AnsibleBase):
 
             if peers:
                 bgp.set_peers(self.get_values_sorted_by_key(peers))
-                self.bgp_map[bgp_name] = bgp
+            self.bgp_map[bgp_name] = bgp
     # end build_dci_bgp_config
 
     def device_send(self, job_template, job_input, is_delete, retry):
@@ -375,7 +377,10 @@ class AnsibleConf(AnsibleBase):
         device.set_physical_interfaces(pis)
         device.set_routing_instances(self.get_values_sorted_by_key(self.ri_map))
         device.set_vlans(self.get_values_sorted_by_key(self.vlan_map))
+        device.set_forwarding_options(self.forwarding_options_config)
         device.set_firewall(self.firewall_config)
+        device.set_security_zones(self.get_values_sorted_by_key(self.sc_zone_map))
+        device.set_security_policies(self.get_values_sorted_by_key(self.sc_policy_map))
         return device
     # end prepare_conf
 
@@ -389,12 +394,14 @@ class AnsibleConf(AnsibleBase):
         config = self.prepare_conf(is_delete=is_delete)
         feature_configs, job_template = self.read_node_profile_info()
         job_input = {
-            'fabric_uuid': self.physical_router.fabric,
+            'fabric_uuid':
+                self.physical_router.fabric
+                if self.physical_router.fabric else '',
             'device_management_ip': self.physical_router.management_ip,
             'additional_feature_params': feature_configs,
             'device_abstract_config': self.export_dict(config),
             'is_delete': is_delete,
-            'is_ztp': self.physical_router.is_ztp()
+            'manage_underlay': self.physical_router.underlay_managed
         }
         return self.device_send(job_template, job_input, is_delete, retry)
     # end send_conf

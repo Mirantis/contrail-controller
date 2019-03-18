@@ -31,6 +31,7 @@ class DeviceZtpManager(object):
         self._tftp_dir = args.tftp_dir
         self._dhcp_leases_file = args.dhcp_leases_file
         self._timeout = args.ztp_timeout
+        self._host_ip = args.host_ip
         self._logger = logger
         self._lease_pattern = None
         self._initialized = False
@@ -93,12 +94,15 @@ class DeviceZtpManager(object):
     # end handle_tftp_file_request
 
     def handle_ztp_request(self, body, message):
+        self._logger.debug("Entered handle_ztp_request")
         message.ack()
         gevent.spawn(self._ztp_request, message.headers, body)
     # end handle_ztp_request
 
     def _ztp_request(self, headers, config):
         try:
+            self._logger.debug("ztp_request: headers %s, config %s" % \
+                (str(headers), str(config)))
             action = headers.get('action')
             if action is None:
                 return
@@ -138,10 +142,13 @@ class DeviceZtpManager(object):
 
             if os.path.isfile(self._dhcp_leases_file):
                 with open(self._dhcp_leases_file) as lfile:
-                    for match in self._lease_pattern.finditer(lfile.read()):
+                    line = lfile.readline()
+                    while line:
+                        match = self._lease_pattern.match(line)
                         mac = match.group(1)
                         ip_addr = match.group(2)
                         lease_table[mac] = ip_addr
+                        line = lfile.readline()
 
             for mac, ip_addr in lease_table.iteritems():
                 if self._within_dhcp_subnet(ip_addr, config):
@@ -163,6 +170,7 @@ class DeviceZtpManager(object):
 
     def _handle_file_request(self, body, message, dir):
         try:
+            self._logger.debug("handle_file_request: headers %s" % str(message.headers))
             message.ack()
             action = message.headers.get('action')
             if action is None:
@@ -176,10 +184,14 @@ class DeviceZtpManager(object):
             if action == 'create':
                 self._logger.info("Creating file %s" % file_path)
                 with open(file_path, 'w') as f:
-                    f.write(bytearray(base64.b64decode(body)))
+                    contents = base64.b64decode(body)
+                    contents = contents.replace('<host_ip>',
+                        self._host_ip)
+                    f.write(bytearray(contents))
             elif action == 'delete':
                 self._logger.info("Deleting file %s" % file_path)
-                os.remove(file_path)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
         except Exception as e:
             self._logger.error("ZTP manager: Error handling file request %s" %
                                repr(e))
@@ -189,14 +201,14 @@ class DeviceZtpManager(object):
         if self._client is None:
             self._client = docker.from_env()
         self._logger.debug("Fetching all containers")
-        all_containers = self._client.containers(all=True)
+        all_containers = self._client.containers.list(all=True)
         for container in all_containers:
-            labels = container.get('Labels', dict())
+            labels = container.labels or dict()
             service = labels.get('net.juniper.contrail.service')
             if service == 'dnsmasq':
                 self._logger.info("Restarting dnsmasq docker: %s" %
-                                  str(container))
-                self._client.restart(container)
+                                  str(container.name))
+                container.restart()
     # end _restart_dnsmasq_container
 
     @staticmethod
