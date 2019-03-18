@@ -6,6 +6,8 @@
 
 #include "ifmap_node.h"
 
+#include <iostream>
+
 #include <pugixml/pugixml.hpp>
 
 #include "ifmap/ifmap_table.h"

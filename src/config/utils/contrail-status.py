@@ -80,6 +80,25 @@ except:
         init = 'sysv'
 
 
+
+try:
+    with open(os.devnull, "w") as fnull:
+        subprocess.check_call(["pidof", "systemd"], stdout=fnull, stderr=fnull)
+    init = 'systemd'
+except:
+    try:
+        with open(os.devnull, "w") as fnull:
+            subprocess.check_call(["initctl", "list"], stdout=fnull, stderr=fnull)
+        init = 'upstart'
+    except:
+        init = 'sysv'
+
+
+# contrail services in redhat system uses sysv, though systemd is default.
+init_sys_used = init
+if distribution in ['redhat']:
+    init_sys_used = 'sysv'
+
 class EtreeToDict(object):
     """Converts the xml etree to dictionary/list of dictionary."""
 
