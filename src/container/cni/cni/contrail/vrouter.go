@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -46,6 +47,37 @@ type VRouter struct {
 
 type vrouterJson struct {
 	VRouter VRouter `json:"contrail"`
+}
+
+func (vrouter *VRouter) getVmIDFromPortList(containerId string) string {
+	vrouter.containerId = containerId
+	files, err := ioutil.ReadDir(vrouter.Dir)
+	if err != nil {
+		log.Errorf("Cannot walk trought %s Error: %s", vrouter.Dir, err)
+	}
+	for _, file := range files {
+		if file.Mode().IsDir() {
+			continue
+		}
+		fullpath := vrouter.Dir + "/" + file.Name()
+		data, err := ioutil.ReadFile(fullpath)
+		if err != nil {
+			log.Errorf("Cannot read file %s Error: %s", fullpath, err)
+			continue
+		}
+
+		//need to check for file type to detect filter off non-text files
+		fileType := http.DetectContentType(data)
+		if strings.Index(fileType, "text") == -1 {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.Index(line, vrouter.containerId) > -1 {
+				return file.Name()
+			}
+		}
+	}
+	return ""
 }
 
 // Make filename to store config
