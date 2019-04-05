@@ -1448,6 +1448,8 @@ AgentParam::AgentParam(bool enable_flow_options,
          "DNS Timeout")
         ("DNS.dns_max_retries", opt::value<uint32_t>()->default_value(2),
          "Dns Max Retries")
+        ("DNS.resolv_conf_file", opt::value<string>()->default_value("/etc/resolv.conf"),
+         "DNS default nameserver file")
         ("DNS.dns_client_port",
          opt::value<uint16_t>()->default_value(ContrailPorts::VrouterAgentDnsClientUdpPort()),
          "Dns client port")
