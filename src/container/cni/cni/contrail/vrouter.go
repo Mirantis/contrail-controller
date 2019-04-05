@@ -27,7 +27,7 @@ import (
 const VROUTER_AGENT_IP = "127.0.0.1"
 const VROUTER_AGENT_PORT = 9091
 const VROUTER_POLL_TIMEOUT = 3
-const VROUTER_POLL_RETRIES = 20
+const VROUTER_POLL_RETRIES = 10
 
 //Directory containing configuration for the container
 const VROUTER_CONFIG_DIR = "/var/lib/contrail/ports/vm"
@@ -310,6 +310,7 @@ func (vrouter *VRouter) Add(containerName, containerUuid, containerVn,
 		err := vrouter.addVmToAgent(addMsg)
 		if err != nil {
 			log.Errorf("Error in Add to VRouter")
+			vrouter.delVmFile()
 			return nil, err
 		}
 	}
@@ -317,7 +318,11 @@ func (vrouter *VRouter) Add(containerName, containerUuid, containerVn,
 	result, poll_err := vrouter.PollUrl("/vm")
 	if poll_err != nil {
 		log.Errorf("Error in polling VRouter")
-		return nil, poll_err
+		vrouter.delVmFile()
+		if updateAgent == true {
+			vrouter.delVmToAgent()
+			return nil, poll_err
+		}
 	}
 
 	return result, nil
