@@ -37,6 +37,7 @@ from gevent import monkey
 monkey.patch_all()
 import os
 import os.path
+import glob
 import sys
 import argparse
 import socket
@@ -193,12 +194,20 @@ def main(args_str=' '.join(sys.argv[1:])):
         if not rule_file:
             rule_file = "/etc/contrail/supervisord_config_files/" + \
                 "contrail-config.rules"
-        unit_names = ['contrail-api.service',
-                      'contrail-schema.service',
+
+        contrail_api_units = [
+            os.path.basename(service_file)
+            for service_file in glob.glob(
+                "/etc/systemd/system/multi-user.target.wants/"
+                "contrail-api*.service"
+            )
+        ] or ['contrail-api.service']
+
+        unit_names = ['contrail-schema.service',
                       'contrail-svc-monitor.service',
                       'contrail-device-manager.service',
-                      'contrail-config-nodemgr.service',
-                     ]
+                      'contrail-config-nodemgr.service'
+                     ] + contrail_api_units
         prog = ConfigEventManager(_args, rule_file, unit_names)
     elif (node_type == 'contrail-control'):
         if not rule_file:

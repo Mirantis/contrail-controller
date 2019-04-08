@@ -167,7 +167,8 @@ class SystemdUtils(object):
     PATH_REPLACEMENTS = {
         ".": "_2e",
         "-": "_2d",
-        "/": "_2f"
+        "/": "_2f",
+        "@": "_40"
     }
 
     SYSTEMD_BUS_NAME = "org.freedesktop.systemd1"
