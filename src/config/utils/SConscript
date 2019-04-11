@@ -31,6 +31,7 @@ utils_scripts = [
   'contrail_veth_port.py',
   'encap.py',
   'provision_forwarding_mode.py',
+  'provision_physical_device.py',
   'provision_vrouter.py',
   'vncop.py',
   'create_floating_pool.py',
