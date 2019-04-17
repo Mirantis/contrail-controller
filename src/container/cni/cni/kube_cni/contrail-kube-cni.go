@@ -120,7 +120,7 @@ func CmdDel(skelArgs *skel.CmdArgs) error {
 
 	log.Infof("Came in Del for container %s", skelArgs.ContainerID)
 	// Get UUID and Name for container
-	_, containerName, err := getPodInfo(skelArgs, "DEL", k8s.Kubeconfig)
+	containerName, _, err := getPodInfo(skelArgs, "DEL", k8s.Kubeconfig)
 	if err != nil {
 		log.Errorf("Error getting UUID/Name for Container")
 		return err

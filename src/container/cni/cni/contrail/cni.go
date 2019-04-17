@@ -37,7 +37,9 @@ const CniVersion = "0.2.0"
         "vif-type"      : "veth/macvlan",
         "parent-interface" : "eth0"
     },
-
+    "kubernetes" : {
+        "kubeconfig" : "/etc/kubernetes/kubelet.kubeconfig"
+    }
     "name": "contrail",
     "type": "contrail"
 }
@@ -188,6 +190,10 @@ func (cni *ContrailCni) CmdAdd() error {
 		cni.ContainerVn, cni.cniArgs.ContainerID, cni.cniArgs.Netns,
 		cni.cniArgs.IfName, intf.GetHostIfName(), updateAgent)
 	if err != nil {
+		// Interface which is not registered by vrouter should be deleted
+		// Fix for stale interfaces created by K8s conformance test.
+		cni.VRouter.Del(cni.cniArgs.ContainerID, cni.ContainerUuid,
+			cni.ContainerVn, updateAgent)
 		log.Infof("Error in Add to VRouter")
 		return err
 	}
@@ -211,7 +217,7 @@ func (cni *ContrailCni) CmdAdd() error {
 		return err
 	})
 	if err != nil {
-		log.Infof("Error geting link local ip for %s: %v\n", portSystemName, err)
+		log.Errorf("Error geting link local ip for %s: %v\n", portSystemName, err)
 		return err
 	}
 
@@ -225,12 +231,12 @@ func (cni *ContrailCni) CmdAdd() error {
 
 	if err := utils.DoWithRetries(10, 100*time.Millisecond, func() error {
 		if err := iptables.EnableContrailChains(); err != nil {
-			log.Infof("Error enabling contrail chains: %v\n", err)
+			log.Errorf("Error enabling contrail chains: %v\n", err)
 			return err
 		}
-		comment := strings.Join([]string{cni.ContainerName, "VRouter-linklocal"}, ":")
+		comment := strings.Join([]string{cni.ContainerName, cni.ContainerUuid, "VRouter-linklocal"}, ":")
 		if err := iptables.AddDnatRuleFromToWithComment(result.Ip, linkLocalIP, comment); err != nil {
-			log.Infof("Error adding dnat rule to %s from %s with comment %s: %v\n",
+			log.Errorf("Error adding dnat rule to %s from %s with comment %s: %v\n",
 				result.Ip, linkLocalIP, comment, err)
 			return err
 		}
@@ -284,7 +290,7 @@ func (cni *ContrailCni) CmdDel() error {
 		log.Errorf("Error deleting interface from agent: %s", err)
 	}
 
-	comment := strings.Join([]string{cni.ContainerName, "VRouter-linklocal"}, ":")
+	comment := strings.Join([]string{cni.ContainerName, cni.ContainerUuid, "VRouter-linklocal"}, ":")
 	if err := iptables.DeleteDnatRulesByComment(comment); err != nil {
 		return fmt.Errorf("error deleting rules with comment %s: %v", comment, err)
 	}
