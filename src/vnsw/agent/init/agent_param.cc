@@ -536,6 +536,8 @@ void AgentParam::ParseDefaultSectionArguments
                           "DEFAULT.pkt0_tx_buffers");
     GetOptValue<bool>(var_map, measure_queue_delay_,
                       "DEFAULT.measure_queue_delay");
+    GetOptValue<uint32_t>(var_map, config_wait_time_,
+                          "DEFAULT.config_wait_time");
     GetOptValue<string>(var_map, tunnel_type_,
                         "DEFAULT.tunnel_type");
     GetOptValue<uint16_t>(var_map, min_aap_prefix_len_,
@@ -1132,6 +1134,7 @@ void AgentParam::LogConfig() const {
          iter != list.end(); iter++) { 
          concat_servers += *iter + " ";
     }
+    LOG(DEBUG, "Config Wait time            : " << config_wait_time_);
     LOG(DEBUG, "DNS Servers                 : " << concat_servers);
     LOG(DEBUG, "DNS client port             : " << dns_client_port_);
     LOG(DEBUG, "DNS timeout                 : " << dns_timeout_);
@@ -1298,7 +1301,7 @@ AgentParam::AgentParam(bool enable_flow_options,
         enable_service_options_(enable_service_options),
         agent_mode_(agent_mode), gateway_mode_(NONE), vhost_(),
         pkt0_tx_buffer_count_(Agent::kPkt0TxBufferCount),
-        measure_queue_delay_(false),
+        measure_queue_delay_(false), config_wait_time_(1),
         agent_name_(), eth_port_(),
         eth_port_no_arp_(false), eth_port_encap_type_(),
         dns_client_port_(0), dns_timeout_(3000),
@@ -1414,6 +1417,8 @@ AgentParam::AgentParam(bool enable_flow_options,
         ("DEFAULT.flow_cache_timeout",
          opt::value<uint16_t>()->default_value(Agent::kDefaultFlowCacheTimeout),
          "Flow aging time in seconds")
+        ("DEFAULT.config_wait_time", opt::value<uint32_t>()->default_value(1),
+         "Config wait time in seconds")
         ("DEFAULT.stale_interface_cleanup_timeout",
          opt::value<uint32_t>()->default_value(default_stale_interface_cleanup_timeout),
          "Stale Interface cleanup timeout")

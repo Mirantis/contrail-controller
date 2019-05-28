@@ -1190,6 +1190,10 @@ public:
  
     void SetMeasureQueueDelay(bool val);
     bool MeasureQueueDelay();
+
+    uint32_t ConfigWaitTime();
+    void SetConfigWaitTime(uint32_t val);
+
     void TaskTrace(const char *file_name, uint32_t line_no, const Task *task,
                    const char *description, uint32_t delay);
 
