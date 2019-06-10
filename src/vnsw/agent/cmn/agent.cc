@@ -100,39 +100,6 @@ const string &Agent::vhost_interface_name() const {
     return vhost_interface_name_;
 };
 
-bool Agent::is_vhost_interface_up() const {
-#define LOG_RATE_LIMIT (15)
-    if (tor_agent_enabled() || test_mode()) {
-        return true;
-    }
-    struct ifreq ifr;
-    static int err_count = 0;
-    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
-    memset(&ifr, 0, sizeof(ifr));
-    strcpy(ifr.ifr_name, vhost_interface_name().c_str());
-    int err = ioctl(sock, SIOCGIFFLAGS, &ifr);
-    if (err < 0 || !(ifr.ifr_flags & IFF_UP)) {
-        close(sock);
-        if ((err_count % LOG_RATE_LIMIT) == 0) {
-            LOG(DEBUG, "vhost is down");
-        }
-        err_count++;
-        return false;
-    }
-    err = ioctl(sock, SIOCGIFADDR, &ifr);
-    if (err < 0) {
-        close(sock);
-        if ((err_count % LOG_RATE_LIMIT) == 0) {
-            LOG(DEBUG, "vhost is up. but ip is not set");
-        }
-        err_count++;
-        return false;
-    }
-    close(sock);
-    return true;
-#undef LOG_RATE_LIMIT
-}
-
 bool Agent::isXenMode() {
     return params_->isXenMode();
 }
@@ -1105,6 +1072,14 @@ VrouterObjectLimits Agent::GetVrouterObjectLimits() {
    vr_limits.set_vrouter_max_oflow_entries(vrouter_max_oflow_entries());
    vr_limits.set_vrouter_priority_tagging(vrouter_priority_tagging());
    return vr_limits;
+}
+
+uint32_t Agent::ConfigWaitTime() {
+    return params_->config_wait_time();
+}
+
+void Agent::SetConfigWaitTime(uint32_t val) {
+    return params_->set_config_wait_time(val);
 }
 
 void Agent::SetResourceManagerReady() {
