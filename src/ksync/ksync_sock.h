@@ -381,6 +381,9 @@ public:
     uint32_t WaitTreeSize() const;
     void SetSeqno(uint32_t seq);
     void SetMeasureQueueDelay(bool val);
+
+    static void DisableSendQueue(bool val);
+
 protected:
     static void Init(bool use_work_queue, const std::string &cpu_pin_policy);
     static void SetSockTableEntry(KSyncSock *sock);
