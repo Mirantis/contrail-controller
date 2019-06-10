@@ -20,7 +20,10 @@ import bottle
 import time
 from kazoo.exceptions import LockTimeout
 
-from neutron.common import constants
+try:
+    from neutron_lib import constants
+except ImportError:
+    from neutron.common import constants
 
 from cfgm_common import exceptions as vnc_exc
 from vnc_api.vnc_api import *
@@ -1181,10 +1184,6 @@ class DBInterface(object):
 
         # get route table routes
         rt_q_dict['routes'] = rt_q_dict.pop('routes', None)
-        if rt_q_dict['routes']:
-            for route in rt_q_dict['routes']['route']:
-                if route['next_hop_type']:
-                    route['next_hop'] = route['next_hop_type']
         return rt_q_dict
     # end _route_table_vnc_to_neutron
 
@@ -2242,6 +2241,39 @@ class DBInterface(object):
             for k,v in vmi_binding_kvps.items():
                 port_obj.add_virtual_machine_interface_bindings(
                     KeyValuePair(key=k, value=v))
+
+            # Ironic may switch the mac address on a give port
+            net_id = (port_q.get('network_id') or
+                      port_obj.get_virtual_network_refs()[0]['uuid'])
+
+            # Allow updating of mac addres for baremetal deployments or
+            # when port is not attached to any VM
+            allowed_port = (
+                'binding:vnic_type' in port_q and port_q['binding:vnic_type'] == 'baremetal')
+            if not allowed_port:
+                port_bindings = port_obj.get_virtual_machine_interface_bindings()
+                if port_bindings:
+                    kvps = port_bindings.get_key_value_pair()
+                else:
+                    kvps = []
+                for kvp in kvps:
+                    if kvp.key == 'host_id' and kvp.value == "null":
+                        allowed_port = True
+                        break
+            if 'mac_address' in port_q and allowed_port:
+                # Ensure that duplicate mac address does not exist on this network
+                ports = self._virtual_machine_interface_list(back_ref_id=net_id)
+                for port in ports:
+                    macs = port.get_virtual_machine_interface_mac_addresses()
+                    for mac in macs.get_mac_address():
+                        #ensure that the same address is not on any other port
+                        if mac == port_q['mac_address'] and port.uuid != port_q['id']:
+                            raise self._raise_contrail_exception("MacAddressInUse",
+                            net_id=net_id, mac=port_q['mac_address'])
+                # Update the mac accress if no duplicate found
+                mac_addrs_obj = MacAddressesType()
+                mac_addrs_obj.set_mac_address([port_q['mac_address']])
+                port_obj.set_virtual_machine_interface_mac_addresses(mac_addrs_obj)
 
         if oper == CREATE:
             if 'port_security_enabled' in port_q:
@@ -3844,6 +3876,10 @@ class DBInterface(object):
                     msg='Router port must have exactly one fixed IP')
             subnet_id = fixed_ips[0]['subnet_id']
             subnet = self.subnet_read(subnet_id)
+            if not IPAddress(subnet['gateway_ip']):
+                self._raise_contrail_exception(
+                    'BadRequest', resource='router',
+                    msg='Subnet for router interface must have a gateway IP')
             self._check_for_dup_router_subnet(router_id,
                                               port['network_id'],
                                               subnet['id'],
@@ -3858,7 +3894,7 @@ class DBInterface(object):
                      'RouterInterfaceNotFoundForSubnet',
                      router_id=router_id,
                      subnet_id=subnet_id)
-            if not subnet['gateway_ip']:
+            if not subnet['gateway_ip'] or not IPAddress(subnet['gateway_ip']):
                 self._raise_contrail_exception(
                     'BadRequest', resource='router',
                     msg='Subnet for router interface must have a gateway IP')
