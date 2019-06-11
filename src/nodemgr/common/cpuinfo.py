@@ -31,9 +31,10 @@ class MemCpuUsageData(object):
     #end get_num_socket
 
     def get_num_cpu(self):
-        cmd = 'lscpu | grep "^CPU(s):" | awk \'{print $2}\''
-        proc = Popen(cmd, shell=True, stdout=PIPE)
-        return int(proc.communicate()[0])
+        if hasattr(psutil, 'NUM_CPUS'):
+            return psutil.NUM_CPUS
+        else:
+            return psutil.cpu_count()
     #end get_num_cpu
 
     def get_num_core_per_socket(self):
@@ -112,10 +113,7 @@ class MemCpuUsageData(object):
         last_cpu = self.last_cpu
         last_time = self.last_time
 
-        if hasattr(self._process, 'get_cpu_times'):
-            current_cpu = self._process.get_cpu_times()
-        else:
-            current_cpu = self._process.cpu_times()
+        current_cpu = self._process.get_cpu_times()
         current_time = os.times()[4]
 
         # tracking system/user time only
