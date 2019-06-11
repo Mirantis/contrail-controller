@@ -74,6 +74,9 @@ void Options::Initialize(EventManager &evm,
              opt::value<string>()->default_value("dns_config.xml"),
              "DNS Configuration file")
 
+        ("DEFAULT.resolv_conf_file",
+             opt::value<string>()->default_value("/etc/resolv.conf"),
+             "Resolv conf file")
         ("DEFAULT.named_config_file",
              opt::value<string>()->default_value("contrail-named.conf"),
              "Named Configuration file")
@@ -308,6 +311,7 @@ void Options::Process(int argc, char *argv[],
     GetOptValue<string>(var_map, xmpp_server_cert_, "DEFAULT.xmpp_server_cert");
     GetOptValue<string>(var_map, xmpp_server_key_, "DEFAULT.xmpp_server_key");
     GetOptValue<string>(var_map, xmpp_ca_cert_, "DEFAULT.xmpp_ca_cert");
+    GetOptValue<string>(var_map, resolv_conf_file_, "DEFAULT.resolv_conf_file");
 
     sandesh::options::ProcessOptions(var_map, &sandesh_config_);
 }

@@ -589,7 +589,6 @@ test_suite = [
     bgp_membership_test,
     bgp_msg_builder_test,
     bgp_multicast_test,
-    bgp_peer_close_gr_test,
     bgp_peer_close_test,
     bgp_peer_test,
     bgp_proto_test,
@@ -611,7 +610,6 @@ test_suite = [
     bgp_update_rx_test,
     bgp_update_test,
     bgp_update_sender_test,
-    bgp_xmpp_basic_test,
     bgp_xmpp_channel_test,
     bgp_xmpp_deferq_test,
     bgp_xmpp_evpn_mcast_test,
@@ -683,8 +681,16 @@ env.Alias('controller/src/bgp:test', [
     'controller/src/bgp/tunnel_encap:test',
 ])
 
-flaky_test_suite = [ ]
-flaky_test_suite += graceful_restart_flaky_tests
+flaky_test_suite = [
+    bgp_peer_close_gr_test,
+    bgp_xmpp_basic_test,
+    #graceful_restart_flap_all_test,
+    #graceful_restart_flap_some_test,
+    #graceful_restart_instance_config_test,
+    graceful_restart_flaky_tests,
+]
+
+
 flaky_test = env.TestSuite('bgp-flaky-test', flaky_test_suite)
 
 env.Alias('controller/src/bgp:flaky-test', [
