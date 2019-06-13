@@ -814,7 +814,6 @@ public:
     void set_vhost_interface_name(const std::string &name) {
         vhost_interface_name_ = name;
     }
-    bool is_vhost_interface_up() const;
 
     const std::string &pkt_interface_name() const {
         return pkt_interface_name_; 
@@ -1191,6 +1190,10 @@ public:
  
     void SetMeasureQueueDelay(bool val);
     bool MeasureQueueDelay();
+
+    uint32_t ConfigWaitTime();
+    void SetConfigWaitTime(uint32_t val);
+
     void TaskTrace(const char *file_name, uint32_t line_no, const Task *task,
                    const char *description, uint32_t delay);
 

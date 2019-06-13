@@ -50,6 +50,10 @@ _IFACE_ROUTE_TABLE_NAME_PREFIX = 'NEUTRON_IFACE_RT'
 _IFACE_ROUTE_TABLE_NAME_PREFIX_REGEX = re.compile(
     '%s_%s_%s' % (_IFACE_ROUTE_TABLE_NAME_PREFIX, UUID_PATTERN, UUID_PATTERN))
 
+# VNC to neutron resource type
+_RESOURCE_VNC_TO_NEUTRON = {'virtual_network':
+                            'network'}
+
 class LocalVncApi(VncApi):
     def __init__(self, api_server_obj, *args, **kwargs):
         if api_server_obj:
@@ -521,6 +525,8 @@ class DBInterface(object):
             self._raise_contrail_exception('BadRequest',
                 resource=resource_type, msg=str(e))
         except OverQuota as e:
+            if resource_type in _RESOURCE_VNC_TO_NEUTRON:
+                resource_type = _RESOURCE_VNC_TO_NEUTRON[resource_type]
             self._raise_contrail_exception('OverQuota',
                 overs=[resource_type], msg=str(e))
         except AuthFailed as e:
@@ -1146,10 +1152,6 @@ class DBInterface(object):
 
         # get route table routes
         rt_q_dict['routes'] = rt_q_dict.pop('routes', None)
-        if rt_q_dict['routes']:
-            for route in rt_q_dict['routes']['route']:
-                if route['next_hop_type']:
-                    route['next_hop'] = route['next_hop_type']
         return rt_q_dict
     # end _route_table_vnc_to_neutron
 
@@ -3626,9 +3628,17 @@ class DBInterface(object):
     #end policy_count
 
     def _router_update_gateway(self, router_q, rtr_obj):
-        ext_gateway = router_q.get('external_gateway_info', None)
+        """
+        NOTE(gzimin): In case if router gateway is not updating
+        we can set param ext_gateway to old_ext_gateway if there
+        is no external_gateway_info in request. Then we check values
+        and if they are equal we just skip updating router gateway.
+        """
         old_ext_gateway = self._get_external_gateway_info(rtr_obj)
+        ext_gateway = router_q.get('external_gateway_info', old_ext_gateway)
         if ext_gateway or old_ext_gateway:
+            if ext_gateway == old_ext_gateway:
+                return
             network_id = None
             if ext_gateway:
                 network_id = ext_gateway.get('network_id', None)
@@ -3865,6 +3875,10 @@ class DBInterface(object):
                     msg='Router port must have exactly one fixed IP')
             subnet_id = fixed_ips[0]['subnet_id']
             subnet = self.subnet_read(subnet_id)
+            if not IPAddress(subnet['gateway_ip']):
+                self._raise_contrail_exception(
+                    'BadRequest', resource='router',
+                    msg='Subnet for router interface must have a gateway IP')
             self._check_for_dup_router_subnet(router_id,
                                               port['network_id'],
                                               subnet['id'],
@@ -3879,7 +3893,7 @@ class DBInterface(object):
                      'RouterInterfaceNotFoundForSubnet',
                      router_id=router_id,
                      subnet_id=subnet_id)
-            if not subnet['gateway_ip']:
+            if not subnet['gateway_ip'] or not IPAddress(subnet['gateway_ip']):
                 self._raise_contrail_exception(
                     'BadRequest', resource='router',
                     msg='Subnet for router interface must have a gateway IP')
