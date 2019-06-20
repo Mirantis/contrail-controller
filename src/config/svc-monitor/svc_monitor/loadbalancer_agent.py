@@ -128,7 +128,7 @@ class LoadbalancerAgent(Agent):
             if HealthMonitorSM.get(hm_id):
                 continue
             hm = config_data
-            if not hm.get('provider'):
+            if hm is None or not hm.get('provider'):
                 continue
             driver = self._get_driver_for_provider(hm['provider'])
             pools = set()
@@ -368,7 +368,7 @@ class LoadbalancerAgent(Agent):
     def loadbalancer_health_monitor_add(self, obj):
         hm = self.hm_get_reqdict(obj)
         if 'provider' not in hm:
-           hm['provider'] = self._default_provider
+            hm['provider'] = self._default_provider
         current_pools = hm['pools'] or []
         old_pools = []
         if obj.last_sent:
@@ -401,7 +401,7 @@ class LoadbalancerAgent(Agent):
 
     def suspend_loadbalancer_health_monitor(self, obj):
         hm = self._object_db.health_monitor_config_get(obj.uuid)
-        if not hm.get('provider'):
+        if hm is None or not hm.get('provider'):
             return
         pools = set()
         for i in hm['pools'] or []:
@@ -419,7 +419,7 @@ class LoadbalancerAgent(Agent):
         if obj.last_sent is None:
             return
         hm = obj.last_sent
-        if not hm.get('provider'):
+        if hm is None or not hm.get('provider'):
             return
         pools = set()
         for i in hm['pools'] or []:
