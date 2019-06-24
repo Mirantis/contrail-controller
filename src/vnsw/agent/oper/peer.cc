@@ -80,7 +80,6 @@ void DynamicPeer::ProcessDelete(DynamicPeer *p) {
 }
 
 bool DynamicPeer::DeleteTimeout() {
-    assert(0);
     return false;
 }
 
