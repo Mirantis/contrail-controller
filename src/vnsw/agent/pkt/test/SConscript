@@ -59,8 +59,8 @@ test_vrf_assign_acl_fip = AgentEnv.MakeTestCmd(env, 'test_vrf_assign_acl_fip',
 test_ecmp_mx = AgentEnv.MakeTestCmd(env, 'test_ecmp_mx', pkt_test_suite)
 test_fip_src_ecmp = AgentEnv.MakeTestCmd(env, 'test_fip_src_ecmp',
                                          pkt_test_suite)
-test_ecmp_local = AgentEnv.MakeTestCmd(env, 'test_ecmp_local', pkt_test_suite)
-test_ecmp_fip = AgentEnv.MakeTestCmd(env, 'test_ecmp_fip', pkt_test_suite)
+test_ecmp_local = AgentEnv.MakeTestCmd(env, 'test_ecmp_local', pkt_flaky_test_suite)
+test_ecmp_fip = AgentEnv.MakeTestCmd(env, 'test_ecmp_fip', pkt_flaky_test_suite)
 test_ecmp_remote = AgentEnv.MakeTestCmd(env, 'test_ecmp_remote', pkt_test_suite)
 test_ecmp_service_vlan = AgentEnv.MakeTestCmd(env, 'test_ecmp_service_vlan',
                                               pkt_test_suite)

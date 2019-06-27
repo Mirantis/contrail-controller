@@ -30,11 +30,12 @@ void NamedConfig::Init(const std::string& named_config_dir,
                        const std::string& named_log_file,
                        const std::string& rndc_config_file,
                        const std::string& rndc_secret,
-                       const std::string& named_max_cache_size) {
+                       const std::string& named_max_cache_size,
+                       const std::string& resolv_conf_file) {
     assert(singleton_ == NULL);
     singleton_ = new NamedConfig(named_config_dir, named_config_file,
                                  named_log_file, rndc_config_file, rndc_secret,
-                                 named_max_cache_size);
+                                 named_max_cache_size, resolv_conf_file);
     singleton_->Reset();
 }
 
