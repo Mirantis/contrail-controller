@@ -122,8 +122,13 @@ class ConfigEventManager(EventManager):
             fail_status_bits, ProcessStateNames, ProcessState)
 
     def do_periodic_events(self):
-        if not self.db and self.config_db:
-            self.cassandra_mgr.database_periodic(self)
+        db = package_installed('contrail-openstack-database')
+        config_db = package_installed('contrail-database')
+        if not db and config_db:
+            # Record cluster status and shut down cassandra if needed
+            self.cassandra_mgr.status()
+        self.event_tick_60()
+        if not db and config_db:
             # Perform nodetool repair every cassandra_repair_interval hours
             if self.tick_count % (60 * self.cassandra_repair_interval) == 0:
                 self.cassandra_mgr.repair()
