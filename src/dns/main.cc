@@ -197,6 +197,7 @@ int main(int argc, char *argv[]) {
                            options.rndc_config_file(),
                            options.rndc_secret(),
                            options.named_max_cache_size(),
+                           options.resolv_conf_file(),
                            options.named_max_retransmissions(),
                            options.named_retransmission_interval());
     DnsConfigParser parser(&config_db);
