@@ -276,11 +276,6 @@ bool RouteKSyncEntry::BuildArpFlags(const DBEntry *e, const AgentPath *path,
         proxy_arp = true;
         break;
 
-    case NextHop::TUNNEL:
-        // set proxy arp flag for tunnels
-        proxy_arp = true;
-        break;
-
     default:
         if (mac != MacAddress::ZeroMac()) {
             // Proxy-ARP without flood if mac-stitching is present
