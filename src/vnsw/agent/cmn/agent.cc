@@ -1074,14 +1074,6 @@ VrouterObjectLimits Agent::GetVrouterObjectLimits() {
    return vr_limits;
 }
 
-uint32_t Agent::ConfigWaitTime() {
-    return params_->config_wait_time();
-}
-
-void Agent::SetConfigWaitTime(uint32_t val) {
-    return params_->set_config_wait_time(val);
-}
-
 void Agent::SetResourceManagerReady() {
     resource_manager_ready_ = true;
     config_manager_->Start();

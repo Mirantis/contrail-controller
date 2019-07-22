@@ -5,7 +5,6 @@
 #ifndef vnsw_agent_ksync_init_h
 #define vnsw_agent_ksync_init_h
 
-#include <base/timer.h>
 #include <vrouter/ksync/flowtable_ksync.h>
 #include <vrouter/ksync/mpls_ksync.h>
 #include <vrouter/ksync/nexthop_ksync.h>
@@ -31,7 +30,6 @@ public:
     virtual ~KSync();
 
     virtual void Init(bool create_vhost);
-    virtual void InitConfigDone();
     virtual void InitDone();
     virtual void RegisterDBClients(DB *db);
     void VnswInterfaceListenerInit();
@@ -112,10 +110,6 @@ private:
     void NetlinkInit();
     void CreateVhostIntf();
 
-    bool ConfigWaitCb();
-
-    Timer *config_wait_timer_;
-
     static const int kHugePages = 4;
     int huge_fd_[kHugePages];
     void *huge_pages_[kHugePages];
@@ -128,7 +122,6 @@ public:
     KSyncTcp(Agent *agent);
     virtual ~KSyncTcp();
     virtual void Init(bool create_vhost);
-    virtual void InitConfigDone();
     void TcpInit();
 protected:
     virtual void InitFlowMem();

@@ -269,10 +269,6 @@ void KSyncSock::SetMeasureQueueDelay(bool val) {
     }
 }
 
-void  KSyncSock::DisableSendQueue(bool val) {
-    sock_->send_queue_.set_disable(val);
-}
-
 void KSyncSock::Start(bool read_inline) {
     sock_->read_inline_ = read_inline;
     if (sock_->read_inline_) {

@@ -66,11 +66,7 @@ KSync::KSync(Agent *agent)
       forwarding_class_ksync_obj_(new ForwardingClassKSyncObject(this)),
       qos_config_ksync_obj_(new QosConfigKSyncObject(this)),
       bridge_route_audit_ksync_obj_(new BridgeRouteAuditKSyncObject(this)),
-      ksync_bridge_memory_(new KSyncBridgeMemory(this, 1)),
-      config_wait_timer_(TimerManager::CreateTimer(
-                       *(agent->event_manager())->io_service(),
-                       "KSync Config wait Timer",
-                       agent->task_scheduler()->GetTaskId("Agent::KSync"), 0)) {
+      ksync_bridge_memory_(new KSyncBridgeMemory(this, 1)) {
       for (uint16_t i = 0; i < kHugePages; i++) {
           huge_fd_[i] = -1;
       }
@@ -78,8 +74,6 @@ KSync::KSync(Agent *agent)
           FlowTableKSyncObject *obj = new FlowTableKSyncObject(this);
           flow_table_ksync_obj_list_.push_back(obj);
       }
-      config_wait_timer_->Start((agent->ConfigWaitTime() * 1000),
-                              boost::bind(&KSync::ConfigWaitCb, this));
 }
 
 KSync::~KSync() {
@@ -87,7 +81,6 @@ KSync::~KSync() {
           if (huge_fd_[i] != -1)
               close (huge_fd_[i]);
       }
-    TimerManager::DeleteTimer(config_wait_timer_);
     STLDeleteValues(&flow_table_ksync_obj_list_);
 }
 
@@ -110,7 +103,7 @@ void KSync::Init(bool create_vhost) {
     NetlinkInit();
     SetHugePages();
     InitFlowMem();
-    KSyncSock::DisableSendQueue(true);
+    ResetVRouter(true);
     if (create_vhost) {
         CreateVhostIntf();
     }
@@ -120,13 +113,8 @@ void KSync::Init(bool create_vhost) {
         flow_table->set_ksync_object(flow_table_ksync_obj_list_[i]);
         flow_table_ksync_obj_list_[i]->Init();
     }
-}
-
-void KSync::InitConfigDone() {
-    ResetVRouter(true);
     ksync_flow_memory_.get()->Init();
     ksync_bridge_memory_.get()->Init();
-    KSyncSock::DisableSendQueue(false);
 }
 
 void KSync::InitDone() {
@@ -394,11 +382,6 @@ void KSync::CreateVhostIntf() {
 #endif
 }
 
-bool KSync::ConfigWaitCb() {
-    InitConfigDone();
-    return false;
-}
-
 void KSync::UpdateVhostMac() {
 #if defined(__linux__)
     struct  nl_client *cl;
@@ -521,19 +504,14 @@ void KSyncTcp::Init(bool create_vhost) {
     TcpInit();
     SetHugePages();
     InitFlowMem();
-    KSyncSock::DisableSendQueue(true);
-    interface_ksync_obj_.get()->Init();
-    for (uint16_t i = 0; i < flow_table_ksync_obj_list_.size(); i++) {
-        flow_table_ksync_obj_list_[i]->Init();
-    }
-}
-
-void KSyncTcp::InitConfigDone() {
     ResetVRouter(false);
     //Start async read of socket
     KSyncSockTcp *sock = static_cast<KSyncSockTcp *>(KSyncSock::Get(0));
     sock->AsyncReadStart();
+    interface_ksync_obj_.get()->Init();
+    for (uint16_t i = 0; i < flow_table_ksync_obj_list_.size(); i++) {
+        flow_table_ksync_obj_list_[i]->Init();
+    }
     ksync_flow_memory_.get()->Init();
     ksync_bridge_memory_.get()->Init();
-    KSyncSock::DisableSendQueue(false);
 }

@@ -88,8 +88,7 @@ KSyncTxQueue::KSyncTxQueue(KSyncSock *sock) :
     write_events_(0),
     read_events_(0),
     busy_time_(0),
-    measure_busy_time_(false),
-    disable_(false) {
+    measure_busy_time_(false) {
     queue_len_ = 0;
     shutdown_ = false;
     ClearStats();
@@ -139,15 +138,6 @@ void KSyncTxQueue::Shutdown() {
     close(event_fd_);
 }
 
-void KSyncTxQueue::set_disable(bool disable) {
-    if (disable_ != disable) {
-        disable_ = disable;
-        if (queue_len_ != 0 && !disable_) {
-            TriggerEventFd();
-        }
-    }
-}
-
 bool KSyncTxQueue::EnqueueInternal(IoContext *io_context) {
     if (work_queue_) {
         work_queue_->Enqueue(io_context);
@@ -158,25 +148,21 @@ bool KSyncTxQueue::EnqueueInternal(IoContext *io_context) {
     size_t ncount = queue_len_.fetch_and_increment() + 1;
     if (ncount > max_queue_len_)
         max_queue_len_ = ncount;
-    if (ncount == 1 && !disable_) {
-        TriggerEventFd();
+    if (ncount == 1) {
+        uint64_t u = 1;
+        int res = 0;
+        while ((res = write(event_fd_, &u, sizeof(u))) < (int)sizeof(u)) {
+            int ec = errno;
+            if (ec != EINTR && ec != EIO) {
+                LOG(ERROR, "KsyncTxQueue write failure : " << ec << " : "
+                    << strerror(ec));
+                assert(0);
+            }
+        }
+
+        write_events_++;
     }
     return true;
-}
-
-void KSyncTxQueue::TriggerEventFd() {
-    uint64_t u = 1;
-    int res = 0;
-    while ((res = write(event_fd_, &u, sizeof(u))) < (int)sizeof(u)) {
-        int ec = errno;
-        if (ec != EINTR && ec != EIO) {
-            LOG(ERROR, "KsyncTxQueue write failure : " << ec << " : "
-                << strerror(ec));
-            assert(0);
-        }
-    }
-
-    write_events_++;
 }
 
 bool KSyncTxQueue::Run() {

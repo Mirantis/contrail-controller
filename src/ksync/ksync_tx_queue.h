@@ -82,11 +82,8 @@ public:
         return EnqueueInternal(io_context);
     }
 
-     void set_disable(bool disable);
-
 private:
     bool EnqueueInternal(IoContext *io_context);
-    void TriggerEventFd();
 
     WorkQueue<IoContext *> *work_queue_;
     int event_fd_;
@@ -105,7 +102,6 @@ private:
     mutable size_t read_events_;
     mutable uint64_t busy_time_;
     mutable bool measure_busy_time_;
-    bool disable_;
 
     DISALLOW_COPY_AND_ASSIGN(KSyncTxQueue);
 };
