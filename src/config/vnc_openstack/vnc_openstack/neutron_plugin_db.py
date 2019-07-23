@@ -732,10 +732,13 @@ class DBInterface(object):
     #end _router_list_project
 
     def _ipam_list_project(self, project_id):
-        try:
-            project_uuid = str(uuid.UUID(project_id))
-        except (TypeError, ValueError, AttributeError):
-            return []
+        if project_id:
+            try:
+                project_uuid = str(uuid.UUID(project_id))
+            except (TypeError, ValueError, AttributeError):
+                return []
+        else:
+            project_uuid = None
 
         resp_dict = self._vnc_lib.network_ipams_list(parent_id=project_uuid)
 
@@ -774,10 +777,13 @@ class DBInterface(object):
     #end _security_group_entries_list_sg
 
     def _route_table_list_project(self, project_id):
-        try:
-            project_uuid = str(uuid.UUID(project_id))
-        except (TypeError, ValueError, AttributeError):
-            return []
+        if project_id:
+            try:
+                project_uuid = str(uuid.UUID(project_id))
+            except (TypeError, ValueError, AttributeError):
+                return []
+        else:
+            project_uuid = None
 
         resp_dict = self._vnc_lib.route_tables_list(parent_id=project_uuid)
 
@@ -785,21 +791,27 @@ class DBInterface(object):
     #end _route_table_list_project
 
     def _svc_instance_list_project(self, project_id):
-        try:
-            project_uuid = str(uuid.UUID(project_id))
-        except (TypeError, ValueError, AttributeError):
-            return []
+        if project_id:
+            try:
+                project_uuid = str(uuid.UUID(project_id))
+            except (TypeError, ValueError, AttributeError):
+                return []
+        else:
+            project_uuid = None
 
-        resp_dict = self._vnc_lib.service_instances_list(parent_id=project_id)
+        resp_dict = self._vnc_lib.service_instances_list(parent_id=project_uuid)
 
         return resp_dict['service-instances']
     #end _svc_instance_list_project
 
     def _policy_list_project(self, project_id):
-        try:
-            project_uuid = str(uuid.UUID(project_id))
-        except (TypeError, ValueError, AttributeError):
-            return []
+        if project_id:
+            try:
+                project_uuid = str(uuid.UUID(project_id))
+            except (TypeError, ValueError, AttributeError):
+                return []
+        else:
+            project_uuid = None
 
         resp_dict = self._vnc_lib.network_policys_list(parent_id=project_uuid)
 
@@ -3511,11 +3523,7 @@ class DBInterface(object):
                 project_ipams = self._ipam_list_project(p_id)
                 all_ipams.append(project_ipams)
         else:  # no filters
-            dom_projects = self._project_list_domain(None)
-            for project in dom_projects:
-                proj_id = project['uuid']
-                project_ipams = self._ipam_list_project(proj_id)
-                all_ipams.append(project_ipams)
+            all_ipams = [self._ipam_list_project(None)]
 
         # prune phase
         for project_ipams in all_ipams:
@@ -3595,11 +3603,7 @@ class DBInterface(object):
                 project_policys = self._policy_list_project(p_id)
                 all_policys.append(project_policys)
         else:  # no filters
-            dom_projects = self._project_list_domain(None)
-            for project in dom_projects:
-                proj_id = project['uuid']
-                project_policys = self._policy_list_project(proj_id)
-                all_policys.append(project_policys)
+            all_policys = [self._policy_list_project(None)]
 
         # prune phase
         for project_policys in all_policys:
@@ -4869,11 +4873,7 @@ class DBInterface(object):
             project_rts = self._route_table_list_project(p_id)
             all_rts.append(project_rts)
         else:  # no filters
-            dom_projects = self._project_list_domain(None)
-            for project in dom_projects:
-                proj_id = project['uuid']
-                project_rts = self._route_table_list_project(proj_id)
-                all_rts.append(project_rts)
+            all_rts = [self._route_table_list_project(None)]
 
         # prune phase
         for project_rts in all_rts:
@@ -4932,11 +4932,7 @@ class DBInterface(object):
             project_sis = self._svc_instance_list_project(p_id)
             all_sis.append(project_sis)
         else:  # no filters
-            dom_projects = self._project_list_domain(None)
-            for project in dom_projects:
-                proj_id = project['uuid']
-                project_sis = self._svc_instance_list_project(proj_id)
-                all_sis.append(project_sis)
+            all_sis = [self._svc_instance_list_project(None)]
 
         # prune phase
         for project_sis in all_sis:
