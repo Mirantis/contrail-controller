@@ -9,13 +9,15 @@
 #
 
 import ast
+import sys
 import time
 
-from ansible.module_utils.fabric_utils import FabricAnsibleModule
 from inflection import camelize
+from job_manager.job_utils import JobVncApi
 import vnc_api
 
-from job_manager.job_utils import JobVncApi
+from ansible.module_utils.fabric_utils import FabricAnsibleModule
+
 
 DOCUMENTATION = '''
 ---

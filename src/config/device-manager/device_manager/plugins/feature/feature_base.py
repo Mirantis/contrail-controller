@@ -2,17 +2,17 @@
 # Copyright (c) 2019 Juniper Networks, Inc. All rights reserved.
 #
 
-"""
-This file contains the base class for feature plugin
-"""
+"""Base class for feature plugins."""
 
 import abc
+from collections import OrderedDict
 import copy
-import db
+
 from abstract_device_api.abstract_device_xsd import *
 from attrdict import AttrDict
-from collections import OrderedDict
+import db
 from imports import import_feature_plugins
+
 
 class abstractclassmethod(classmethod):
     __isabstractmethod__ = True
@@ -22,16 +22,22 @@ class abstractclassmethod(classmethod):
         super(abstractclassmethod, self).__init__(callable)
 # end abstractclassmethod
 
+
 class FeatureBase(object):
-    """ Base class for feature plugins """
+    """Base class for feature plugins."""
+
     _plugins = {}
 
     class PluginRegistrationFailed(Exception):
+        """Exception class to store plugin registration exceptions."""
+
         def __init__(self, exceptions):
+            """Exception initializer."""
             self.exceptions = exceptions
         # end __init__
 
         def __str__(self):
+            """Convert exception to string for logging."""
             ex_msg = "Feature plugin registration failed:\n"
             for ex in self.exceptions or []:
                 ex_msg += ex + "\n"
@@ -44,7 +50,8 @@ class FeatureBase(object):
         cls._plugins = {}
         # make sure modules are loaded
         import_feature_plugins()
-        # register plugins, find all leaf implementation classes derived from this class
+        # register plugins
+        # find all leaf implementation classes derived from this class
         subclasses = set()
         work = [cls]
         while work:
@@ -63,7 +70,8 @@ class FeatureBase(object):
             try:
                 feature_name = scls.feature_name()
                 if feature_name in cls._plugins:
-                    exceptions.append("Duplicate plugin found for feature %s" % feature_name)
+                    exceptions.append(
+                        "Duplicate plugin found for feature %s" % feature_name)
                 else:
                     cls._plugins[feature_name] = scls
             except Exception as e:
@@ -81,11 +89,13 @@ class FeatureBase(object):
         for feature in features:
             plugin_cls = cls._plugins.get(feature.feature.name)
             if plugin_cls:
-                logger.info("Found feature plugin for pr=%s(%s), feature=%s" % (pr.name, pr.uuid, feature.feature.name))
+                logger.info("Found feature plugin for pr=%s(%s), feature=%s" %
+                            (pr.name, pr.uuid, feature.feature.name))
                 plugin = plugin_cls(logger, pr, feature.configs)
                 plugins.append(plugin)
             else:
-                logger.warning("No plugin found for feature %s" % feature.feature.name)
+                logger.warning("No plugin found for feature %s" %
+                               feature.feature.name)
         return plugins
     # end plugins
 
@@ -96,7 +106,8 @@ class FeatureBase(object):
 
     @staticmethod
     def _add_to_list(lst, value):
-        if value not in lst: lst.append(value)
+        if value not in lst:
+            lst.append(value)
     # end _add_to_list
 
     @staticmethod
@@ -115,7 +126,8 @@ class FeatureBase(object):
             family = 'inet'
             if gateway == '0.0.0.0':
                 gateway = None
-        ip_address = IpAddress(address=address, family=family, gateway=gateway)
+        ip_address = IpAddress(address=address, family=family,
+                               gateway=gateway)
         cls._add_to_list(unit.get_ip_addresses(), ip_address)
     # end _add_ip_address
 
@@ -175,6 +187,12 @@ class FeatureBase(object):
         return cls._is_family_configured(bgp_router.params, 'e-vpn')
     # end _is_evpn
 
+    @classmethod
+    def _is_enterprise_style(cls, physical_router):
+        if physical_router.fabric_obj:
+            return physical_router.fabric_obj.enterprise_style
+    # enf _is_enterprise_style
+
     @staticmethod
     def _get_primary_ri(vn_obj):
         for ri_id in vn_obj.routing_instances:
@@ -187,7 +205,7 @@ class FeatureBase(object):
     @staticmethod
     def _get_encapsulation_priorities():
         return db.GlobalVRouterConfigDM.global_encapsulation_priorities or \
-               ['MPLSoGRE']
+            ['MPLSoGRE']
     # end _get_encapsulation_priorities
 
     @staticmethod
@@ -197,7 +215,6 @@ class FeatureBase(object):
                       prefix_len=int(cidr_parts[1]) if len(cidr_parts) > 1
                       else 32)
     # end _get_subnet_for_cidr
-
 
     @staticmethod
     def _get_route_for_cidr(cidr):
@@ -227,9 +244,9 @@ class FeatureBase(object):
     def _is_valid_vn(vn_uuid, mode):
         vn = db.VirtualNetworkDM.get(vn_uuid)
         return vn is not None and vn.vn_network_id is not None and \
-               vn.get_vxlan_vni() is not None and \
-               vn.get_forwarding_mode() is not None and \
-               mode in vn.get_forwarding_mode()
+            vn.get_vxlan_vni() is not None and \
+            vn.get_forwarding_mode() is not None and \
+            mode in vn.get_forwarding_mode()
     # end _is_valid_vn
 
     def _get_connected_vns(self, mode):
@@ -238,14 +255,14 @@ class FeatureBase(object):
             lr = db.LogicalRouterDM.get(lr_uuid)
             if not lr:
                 continue
-            vns.union(lr.get_connected_networks(include_internal=False))
+            vns = vns.union(lr.get_connected_networks(include_internal=False))
 
         for vn_uuid in self._physical_router.virtual_networks:
             vns.add(vn_uuid)
-            vn = db.VirtualNetworkDM.get(vn_uuid)
-            if vn and vn.router_external:
-                pvn_list = vn.get_connected_private_networks() or []
-                vns.union(pvn_list)
+            vn_obj = db.VirtualNetworkDM.get(vn_uuid)
+            if vn_obj and vn_obj.router_external:
+                pvn_list = vn_obj.get_connected_private_networks() or []
+                vns = vns.union(pvn_list)
 
         return [vn for vn in list(vns) if self._is_valid_vn(vn, mode)]
     # end _get_connected_vns
@@ -265,8 +282,10 @@ class FeatureBase(object):
                     continue
                 vn_obj = db.VirtualNetworkDM.get(vmi_obj.virtual_network)
                 vlan_tag = vmi_obj.vlan_tag
+                port_vlan_tag = vmi_obj.port_vlan_tag
                 for pi_uuid in vpg_interfaces:
-                    if pi_uuid not in self._physical_router.physical_interfaces:
+                    if pi_uuid not in \
+                            self._physical_router.physical_interfaces:
                         continue
                     ae_id = vpg_obj.pi_ae_map.get(pi_uuid)
                     if ae_id is not None:
@@ -279,7 +298,8 @@ class FeatureBase(object):
                     unit = str(vlan_tag)
                     vn_dict.setdefault(vn_obj.uuid, []).append(
                         AttrDict(pi_name=pi_name, li_name=pi_name + '.' + unit,
-                                 unit=unit, vlan_tag=vlan_tag))
+                                 unit=unit, vlan_tag=vlan_tag,
+                                 port_vlan_tag=port_vlan_tag))
         return vn_dict
     # end _get_vn_li_map
 

@@ -27,11 +27,6 @@ try:
 except ImportError:
     from neutron.common import constants
 
-try:
-    from neutron_lib.exceptions.l3 import RouterInterfaceNotFoundForSubnet
-except ImportError:
-    from neutron.extensions.l3 import RouterInterfaceNotFoundForSubnet
-
 from cfgm_common import exceptions as vnc_exc
 from cfgm_common.utils import cgitb_hook
 from cfgm_common import is_uuid_like
@@ -4113,8 +4108,10 @@ class DBInterface(object):
         subnet = None
         if port_id:
             port_db = self.port_read(port_id)
-            if (port_db['device_owner'] != constants.DEVICE_OWNER_ROUTER_INTF
-                or port_db['device_id'] != router_id):
+            if (port_db['device_owner'] not in
+                    [constants.DEVICE_OWNER_ROUTER_INTF,
+                     constants.DEVICE_OWNER_DVR_INTERFACE]
+                    or port_db['device_id'] != router_id):
                 self._raise_contrail_exception('RouterInterfaceNotFound',
                                                router_id=router_id,
                                                port_id=port_id)
@@ -4136,8 +4133,9 @@ class DBInterface(object):
                 if subnet_id == port_db['fixed_ips'][0]['subnet_id']:
                     break
             else:
-               raise RouterInterfaceNotFoundForSubnet(router_id=router_id,
-                                                      subnet_id=subnet_id)
+                self._raise_contrail_exception('RouterInterfaceNotFound',
+                                               router_id=router_id,
+                                               subnet_id=subnet_id)
 
         port_obj = self._virtual_machine_interface_read(port_id)
         router_obj.del_virtual_machine_interface(port_obj)

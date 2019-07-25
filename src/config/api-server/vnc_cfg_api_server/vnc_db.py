@@ -1270,6 +1270,12 @@ class VncDbClient(object):
                             obj_dict['access_control_list_hash'] = hash(rules_obj)
                             self._object_db.object_update('access_control_list',
                                                           obj_uuid, obj_dict)
+                elif obj_type == 'gloabl_system_config':
+                    if (obj_dict['fq_name'][0] == 'default-global-system-config' and
+                         'enable_4byte_as' not in obj_dict):
+                        obj_dict['enable_4byte_as'] = False
+                        self._object_db.object_update('global_system_config',
+                                                      obj_uuid, obj_dict)
                 elif obj_type == 'project':
                     self._api_svr_mgr.create_singleton_entry(
                         ApplicationPolicySet(parent_obj=Project(**obj_dict),
@@ -1613,10 +1619,10 @@ class VncDbClient(object):
         env = get_request().headers.environ
         domain_id = env.get('HTTP_X_DOMAIN_ID')
         if domain_id:
-            domain_id = domain_id.replace('-', '')
+            domain_id = str(uuid.UUID(domain_id))
         project_id = env.get('HTTP_X_PROJECT_ID')
         if project_id:
-            project_id = project_id.replace('-', '')
+            project_id = str(uuid.UUID(project_id))
         return domain_id, project_id
 
     def dbe_list(self, obj_type, parent_uuids=None, back_ref_uuids=None,

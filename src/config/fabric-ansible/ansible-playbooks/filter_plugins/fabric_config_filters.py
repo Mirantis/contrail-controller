@@ -14,6 +14,7 @@ import shutil
 import sys
 import traceback
 
+from ansible.plugins.filter.core import regex_search
 from jinja2 import Environment, ext, FileSystemLoader
 import yaml
 
@@ -75,6 +76,7 @@ class FilterModule(object):
         self.additional_feature_params = job_input['additional_feature_params']
         self.is_delete = job_input['is_delete']
         self.manage_underlay = job_input['manage_underlay']
+        self.enterprise_style = job_input['enterprise_style']
 
         self.conf_dir = './config/' + self.device_mgmt_ip
         self._load_abstract_config()
@@ -165,9 +167,9 @@ class FilterModule(object):
         # end rtfilter
 
         def asnfilter(value):
-            asn = value
+            asn = str(value)
             if not asn.isdigit():
-                return value
+                return asn
             if int(asn) > 65535:
                 return asn + "L"
             return asn
@@ -179,6 +181,7 @@ class FilterModule(object):
                           extensions=(ext.loopcontrols, ext.do))
         env.filters['rtfilter'] = rtfilter
         env.filters['asnfilter'] = asnfilter
+        env.filters['regex_search'] = regex_search
         templ = env.get_template('templates/' + ffile)
         model = '_' + self.device_model if '[' in template and ']' in template\
             else ''
@@ -192,6 +195,7 @@ class FilterModule(object):
             additional_feature_params=self.additional_feature_params,
             is_delete=self.is_delete,
             manage_underlay=self.manage_underlay,
+            enterprise_style=self.enterprise_style,
             cfg_group='__contrail_' + feature + model + '__',
             device_model=self.device_model,
             feature_empty=is_empty
@@ -242,6 +246,7 @@ class FilterModule(object):
             'device_username': self.device_username,
             'device_password': self.device_password,
             'is_delete': self.is_delete,
+            'enterprise_style': self.enterprise_style,
             'onboard_log': FilterLog.instance().dump(),
             'results': {},
             'status': "success"
