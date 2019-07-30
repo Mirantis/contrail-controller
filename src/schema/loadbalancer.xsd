@@ -46,6 +46,45 @@
     </xsd:restriction>
 </xsd:simpleType>
 
+<xsd:element name="loadbalancer-healthmonitor" type="ifmap:IdentityType"/>
+<xsd:element name="project-loadbalancer-healthmonitor"/>
+<!--#IFMAP-SEMANTICS-IDL
+     Link('project-loadbalancer-healthmonitor',
+          'project', 'loadbalancer-healthmonitor', ['has'], 'optional', 'CRUD',
+          'Health monitor objects is configuration to monitor health of individual pool members.') -->
+
+<xsd:element name="loadbalancer-healthmonitor-loadbalancer-pool"/>
+<!--#IFMAP-SEMANTICS-IDL
+     Link('loadbalancer-healthmonitor-loadbalancer-pool',
+          'loadbalancer-healthmonitor', 'loadbalancer-pool', ['ref'], 'CRUD',
+          'Health monitors are associated with pools.') -->
+
+<xsd:element name="loadbalancer-healthmonitor-properties" type="LoadbalancerHealthmonitorType"/>
+<!--#IFMAP-SEMANTICS-IDL
+     Property('loadbalancer-healthmonitor-properties', 'loadbalancer-healthmonitor', 'required', 'CRUD',
+              'Configuration parameters for health monitor like type, method, retries etc.') -->
+
+<xsd:complexType name='LoadbalancerHealthmonitorType'>
+    <xsd:sequence>
+        <xsd:element name='admin-state' type='xsd:boolean' default='true' required='optional' operations='CRUD'
+             description='Administratively up or dowm.'/>/>
+        <xsd:element name='monitor-type' type='HealthmonitorType' required='true' operations='CRUD'
+             description='Protocol used to monitor health, PING, HTTP, HTTPS or TCP' />
+        <xsd:element name='delay' type='xsd:integer' required='true' operations='CRUD'
+             description='Time in seconds  at which health check is repeated'/>
+        <xsd:element name='timeout' type='xsd:integer' required='true' operations='CRUD'
+             description='Time in seconds to wait for response'/>
+        <xsd:element name='max-retries' type='xsd:integer' required='true' operations='CRUD'
+             description='Number of failures before declaring health bad'/>
+        <xsd:element name='http-method' type='xsd:string' required='optional' operations='CRUD'
+             description='In case monitor protocol is HTTP, type of http method used like GET, PUT, POST etc'/>
+        <xsd:element name='url-path' type='xsd:string' required='optional' operations='CRUD'
+             description='In case monitor protocol is HTTP, URL to be used. In case of ICMP, ip address'/>
+        <xsd:element name='expected-codes' type='xsd:string' required='optional' operations='CRUD'
+             description='In case monitor protocol is HTTP, expected return code for HTTP operations like 200 ok.'/>
+    </xsd:sequence>
+</xsd:complexType>
+
 <xsd:element name="loadbalancer-pool" type="ifmap:IdentityType"/>
 <xsd:element name="project-loadbalancer-pool"/>
 <!--#IFMAP-SEMANTICS-IDL
@@ -139,46 +178,6 @@
              description='Weight for load balancing'/>
         <xsd:element name='address' type='IpAddressType' required='required' operations='CR'
              description='Ip address of the member'/>
-    </xsd:sequence>
-</xsd:complexType>
-
-
-<xsd:element name="loadbalancer-healthmonitor" type="ifmap:IdentityType"/>
-<xsd:element name="project-loadbalancer-healthmonitor"/>
-<!--#IFMAP-SEMANTICS-IDL
-     Link('project-loadbalancer-healthmonitor',
-          'project', 'loadbalancer-healthmonitor', ['has'], 'optional', 'CRUD',
-          'Health monitor objects is configuration to monitor health of individual pool members.') -->
-
-<xsd:element name="loadbalancer-pool-loadbalancer-healthmonitor"/>
-<!--#IFMAP-SEMANTICS-IDL
-     Link('loadbalancer-pool-loadbalancer-healthmonitor',
-          'loadbalancer-pool', 'loadbalancer-healthmonitor', ['ref'], 'optional', 'CRUD',
-          'Reference to loadbalancer healthmonitor that this pool uses.') -->
-
-<xsd:element name="loadbalancer-healthmonitor-properties" type="LoadbalancerHealthmonitorType"/>
-<!--#IFMAP-SEMANTICS-IDL
-     Property('loadbalancer-healthmonitor-properties', 'loadbalancer-healthmonitor', 'required', 'CRUD',
-              'Configuration parameters for health monitor like type, method, retries etc.') -->
-
-<xsd:complexType name='LoadbalancerHealthmonitorType'>
-    <xsd:sequence>
-        <xsd:element name='admin-state' type='xsd:boolean' default='true' required='optional' operations='CRUD'
-             description='Administratively up or dowm.'/>/>
-        <xsd:element name='monitor-type' type='HealthmonitorType' required='true' operations='CRUD'
-             description='Protocol used to monitor health, PING, HTTP, HTTPS or TCP' />
-        <xsd:element name='delay' type='xsd:integer' required='true' operations='CRUD'
-             description='Time in seconds  at which health check is repeated'/>
-        <xsd:element name='timeout' type='xsd:integer' required='true' operations='CRUD'
-             description='Time in seconds to wait for response'/>
-        <xsd:element name='max-retries' type='xsd:integer' required='true' operations='CRUD'
-             description='Number of failures before declaring health bad'/>
-        <xsd:element name='http-method' type='xsd:string' required='optional' operations='CRUD'
-             description='In case monitor protocol is HTTP, type of http method used like GET, PUT, POST etc'/>
-        <xsd:element name='url-path' type='xsd:string' required='optional' operations='CRUD'
-             description='In case monitor protocol is HTTP, URL to be used. In case of ICMP, ip address'/>
-        <xsd:element name='expected-codes' type='xsd:string' required='optional' operations='CRUD'
-             description='In case monitor protocol is HTTP, expected return code for HTTP operations like 200 ok.'/>
     </xsd:sequence>
 </xsd:complexType>
 

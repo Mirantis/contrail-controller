@@ -495,6 +495,7 @@ class LoadbalancerAgent(Agent):
 
     def loadbalancer_member_get_reqdict(self, member):
         res = {'id': member.uuid,
+               'vmi': member.vmi,
                'pool_id': member.loadbalancer_pool,
                'status': self._get_object_status(member)}
 
