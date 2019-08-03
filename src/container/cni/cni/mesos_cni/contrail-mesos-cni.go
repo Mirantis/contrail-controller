@@ -22,7 +22,7 @@ func getPodInfo(skelArgs *skel.CmdArgs) (string, string, error) {
 // Add command
 func CmdAdd(skelArgs *skel.CmdArgs) error {
 	// Initialize ContrailCni module
-	cni, err := contrailCni.Init(skelArgs)
+	cni, _, err := contrailCni.Init(skelArgs)
 	if err != nil {
 		return err
 	}
@@ -52,7 +52,7 @@ func CmdAdd(skelArgs *skel.CmdArgs) error {
 // Del command
 func CmdDel(skelArgs *skel.CmdArgs) error {
 	// Initialize ContrailCni module
-	cni, err := contrailCni.Init(skelArgs)
+	cni, _, err := contrailCni.Init(skelArgs)
 	if err != nil {
 		return err
 	}
