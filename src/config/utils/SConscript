@@ -15,6 +15,7 @@ utils_scripts = [
   'provision.py',
   'service-policy.py',
   'chmod.py',
+  'chmod2.py',
   'contrail',
   'contrail-version',
   'demo_cfg.py',
@@ -55,6 +56,7 @@ utils_scripts = [
   'vnc_admin_api.py',
   'provision_global_vrouter_config.py',
   'chownproj.py',
+  'rbacutil.py',
 ]
 
 for utils in utils_scripts:
