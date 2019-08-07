@@ -10,6 +10,8 @@ import platform
 import argparse
 import os
 import time
+from logging.handlers import RotatingFileHandler
+
 
 # Parses nodetool status output and returns a dict
 # containing the nodes and their status
@@ -184,7 +186,8 @@ def setup_logging(option_group):
         handlers.append(logging.SyslogHandler(facility=option_group.syslog))
         # Use standard format here because timestamp and level will be added by syslogd.
     if option_group.logfile:
-        handlers.append(logging.FileHandler(option_group.logfile))
+        handlers.append(RotatingFileHandler(
+            option_group.logfile, maxBytes=10 * 1024 * 1024, backupCount=5))
         handlers[0].setFormatter(logging.Formatter(file_log_format))
     if not handlers:
         handlers.append(logging.StreamHandler())

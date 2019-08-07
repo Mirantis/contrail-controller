@@ -167,7 +167,8 @@ class SystemdUtils(object):
     PATH_REPLACEMENTS = {
         ".": "_2e",
         "-": "_2d",
-        "/": "_2f"
+        "/": "_2f",
+        "@": "_40"
     }
 
     SYSTEMD_BUS_NAME = "org.freedesktop.systemd1"
@@ -648,6 +649,7 @@ class EventManager(object):
         name = socket.gethostname()
         for group in group_names:
             process_infos = []
+            process_db_infos = []
             delete_status = True
             for key in self.process_state_db[group]:
                 pstat = self.process_state_db[group][key]
@@ -661,7 +663,19 @@ class EventManager(object):
                 process_info.last_stop_time = pstat.stop_time
                 process_info.last_exit_time = pstat.exit_time
                 process_info.core_file_list = pstat.core_file_list
-                process_infos.append(process_info)
+
+                # PROD-24894
+                # Add processes related to given role
+                # database services=contrail-config-nodemgr,contrail-database
+                if key == 'contrail-database' and self.type_info._object_table == 'ObjectConfigNode':
+                    process_db_infos.append(process_info)
+                else:
+                    # config services=contrail-config-nodemgr,contrail-api
+                    # contrail-svc-monitor, contrail-schema, contrail-device-manager
+                    process_infos.append(process_info)
+                    if key == 'contrail-config-nodemgr':
+                        process_db_infos.append(process_info)
+
                 #in tor-agent case, we should use tor-agent name as uve key
                 name = pstat.name
                 if pstat.deleted == False:
@@ -678,9 +692,25 @@ class EventManager(object):
             node_status.build_info = self.get_build_info()
             node_status_uve = NodeStatusUVE(table=self.type_info._object_table,
                                             data=node_status)
-	    msg = 'send_process_state_db_base: Sending UVE:' + str(node_status_uve)
+            msg = 'send_process_state_db_base: Sending UVE:' + str(node_status_uve)
             self.msg_log(msg, SandeshLevel.SYS_INFO)
+            # Add info about services in process_infos node_status_uve.send()
             node_status_uve.send()
+
+            # Create info about services for database node,
+            # contrail-config-nodemgr and contrail-database
+            if (self.type_info._object_table == 'ObjectConfigNode'):
+                node_status_db = NodeStatus()
+                node_status_db.name = name
+                node_status_db.deleted = delete_status
+                node_status_db.process_info = process_db_infos
+                node_status_db.build_info = self.get_build_info()
+                database_table = 'ObjectDatabaseInfo'
+                node_status_database_uve = NodeStatusUVE(table=database_table,data=node_status_db)
+                msg_db = str(node_status_db)
+                self.msg_log(msg_db, SandeshLevel.SYS_INFO)
+                node_status_database_uve.send()
+
     # end send_process_state_db_base
 
     def send_process_state_db(self, group_names):
@@ -781,6 +811,14 @@ class EventManager(object):
             msg = 'send_nodemgr_process_status_base: Sending UVE:' + str(node_status_uve)
             self.msg_log(msg, SandeshLevel.SYS_INFO)
             node_status_uve.send()
+
+            #PROD-24894
+            # Adding additional connection infos
+            if self.type_info._object_table == 'ObjectConfigNode':
+                database_table = 'ObjectDatabaseInfo'
+                node_status_db_uve = NodeStatusUVE(table=database_table,
+                                            data=node_status)
+                node_status_db_uve.send()
     # end send_nodemgr_process_status_base
 
     def send_nodemgr_process_status(self):
@@ -818,6 +856,13 @@ class EventManager(object):
         node_status_uve = NodeStatusUVE(table=self.type_info._object_table,
                                         data=node_status)
         node_status_uve.send()
+
+        # PROD-24894
+        if self.type_info._object_table == 'ObjectConfigNode':
+            database_table = 'ObjectDatabaseInfo'
+            node_status_db_uve = NodeStatusUVE(table=database_table,
+                                            data=node_status)
+            node_status_db_uve.send()
 
     def get_group_processes_mem_cpu_usage(self, group_name):
         process_mem_cpu_usage = {}
@@ -924,15 +969,15 @@ class EventManager(object):
         return ""
 
     def event_process_state(self, process_info):
-	msg = ("process:" + process_info['name'] + "," + "group:" +
-		process_info['group'] + "," + "state:" + process_info['state'])
+        msg = ("process:" + process_info['name'] + "," + "group:" +
+                process_info['group'] + "," + "state:" + process_info['state'])
         self.msg_log(msg, SandeshLevel.SYS_DEBUG)
         self.send_process_state(process_info)
         for rules in self.rules_data['Rules']:
             if 'processname' in rules:
                 if ((rules['processname'] == process_info['group']) and
                    (rules['process_state'] == process_info['state'])):
-		    msg = "got a hit with:" + str(rules)
+                    msg = "got a hit with:" + str(rules)
                     self.msg_log(msg, SandeshLevel.SYS_DEBUG)
                     # do not make async calls
                     try:
@@ -940,13 +985,13 @@ class EventManager(object):
                             [rules['action']], shell=True,
                             stdout=self.stderr, stderr=self.stderr)
                     except Exception as e:
-		        msg = ('Failed to execute action: ' + rules['action'] +
-				 ' with err ' + str(e))
+                        msg = ('Failed to execute action: ' + rules['action'] +
+                                ' with err ' + str(e))
                         self.msg_log(msg, SandeshLevel.SYS_ERR)
                     else:
                         if ret_code:
-			    msg = ('Execution of action ' + rules['action'] + 
-					' returned err ' + str(ret_code))
+                            msg = ('Execution of action ' + rules['action'] +
+                                    ' returned err ' + str(ret_code))
                             self.msg_log(msg, SandeshLevel.SYS_ERR)
     # end event_process_state
 
@@ -960,7 +1005,7 @@ class EventManager(object):
                 if ((rules['flag_name'] == flag_and_value[0]) and
                    (rules['flag_value'].strip() == flag_and_value[2].strip())):
                     msg = "got a hit with:" + str(rules)
-	            self.msg_log(msg, SandeshLevel.SYS_DEBUG)
+                    self.msg_log(msg, SandeshLevel.SYS_DEBUG)
                     cmd_and_args = ['/usr/bin/bash', '-c', rules['action']]
                     subprocess.Popen(cmd_and_args)
 
@@ -979,7 +1024,25 @@ class EventManager(object):
             if self.update_process_core_file_list():
                 self.send_process_state_db([group])
 
-            process_mem_cpu_usage = self.get_group_processes_mem_cpu_usage(group)
+            # Split processes between config and database processes and send info for them separately
+            process_usage_base = self.get_group_processes_mem_cpu_usage(group)
+            process_mem_cpu_usage = process_usage_base
+            if self.type_info._object_table == 'ObjectConfigNode':
+                process_config_mem_cpu_usage = {}
+                process_db_mem_cpu_usage = {}
+
+                # database processes
+                for process in process_usage_base:
+                    if (process == 'cassandra' or
+                        process == 'contrail-database' or
+                        process == 'zookeeper'):
+                        process_db_mem_cpu_usage[process] = process_usage_base[process]
+                    else:
+                        # config processes
+                        process_config_mem_cpu_usage[process] = process_usage_base[process]
+                        if process == 'contrail-config-nodemgr':
+                            process_db_mem_cpu_usage[process] = process_usage_base[process]
+                process_mem_cpu_usage = process_config_mem_cpu_usage
 
             # get system mem/cpu usage
             system_mem_cpu_usage_data = MemCpuUsageData(os.getpid(), self.last_cpu, self.last_time)
@@ -1013,6 +1076,21 @@ class EventManager(object):
             node_status_uve = NodeStatusUVE(table=self.type_info._object_table,
                                             data=node_status)
             node_status_uve.send()
+
+            # PROD-24894
+            # Send disk usage info for ntw database role, not only for config role
+            if self.type_info._object_table == 'ObjectConfigNode':
+                database_table = 'ObjectDatabaseInfo'
+                # send info for db role only for contrail-config-nodemgr, cassandra and zookeeper processes
+                node_db_status = NodeStatus(name=self.process_state_db[group][key].name,
+                                         disk_usage_info=disk_usage_info,
+                                         system_mem_usage=system_mem_usage,
+                                         system_cpu_usage=system_cpu_usage,
+                                         process_mem_cpu_usage=process_db_mem_cpu_usage)
+
+                node_status_db_uve = NodeStatusUVE(table=database_table, data=node_db_status)
+                node_status_db_uve.send()
+
         self.installed_package_version = installed_package_version
 
     def do_periodic_events(self):

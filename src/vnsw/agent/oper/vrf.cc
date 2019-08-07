@@ -408,7 +408,6 @@ bool VrfEntry::DeleteTimeout() {
     str << " Reference: " << GetRefCount();
     OPER_TRACE_ENTRY(Vrf, static_cast<const AgentDBTable *>(get_table()),
                      "VRF delete failed, " + str.str(), name_);
-    assert(0);
     return false;
 }
 

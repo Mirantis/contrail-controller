@@ -105,7 +105,7 @@ class TorAgentBaseSetup(ContrailSetup):
         local("sudo cp /etc/init.d/contrail-vrouter-agent /etc/init.d/%s" %(self.tor_process_name))
 
     def add_vnc_config(self):
-        cmd = "sudo python /opt/contrail/utils/provision_vrouter.py"
+        cmd = "sudo python /usr/share/contrail-utils/provision_vrouter.py"
         cmd += " --host_name %s" % self._args.tor_agent_name
         cmd += " --host_ip %s" % self._args.self_ip
         cmd += " --api_server_ip %s" % self._args.cfgm_ip
@@ -120,7 +120,7 @@ class TorAgentBaseSetup(ContrailSetup):
         local(cmd)
 
     def add_physical_device(self):
-        cmd = "sudo python /opt/contrail/utils/provision_physical_device.py"
+        cmd = "sudo python /usr/share/contrail-utils/provision_physical_device.py"
         cmd += " --device_name %s" % self._args.tor_name
         cmd += " --vendor_name %s" % self._args.tor_vendor_name
         cmd += " --device_mgmt_ip %s" % self._args.tor_ip
