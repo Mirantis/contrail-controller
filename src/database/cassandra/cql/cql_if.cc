@@ -1857,10 +1857,6 @@ CqlIfImpl::CqlIfImpl(EventManager *evm,
     }
     // Set number of IO threads to half the number of cores
     cci_->CassClusterSetNumThreadsIo(cluster_.get(), io_thread_count_);
-    cci_->CassClusterSetPendingRequestsHighWaterMark(cluster_.get(), 10000);
-    cci_->CassClusterSetPendingRequestsLowWaterMark(cluster_.get(), 5000);
-    cci_->CassClusterSetWriteBytesHighWaterMark(cluster_.get(), 128000);
-    cci_->CassClusterSetWriteBytesLowWaterMark(cluster_.get(), 96000);
 }
 
 CqlIfImpl::~CqlIfImpl() {
@@ -3034,28 +3030,6 @@ void CassDatastaxLibrary::CassClusterSetCredentials(CassCluster* cluster,
 CassError CassDatastaxLibrary::CassClusterSetNumThreadsIo(CassCluster* cluster,
     unsigned num_threads) {
     return cass_cluster_set_num_threads_io(cluster, num_threads);
-}
-
-CassError CassDatastaxLibrary::CassClusterSetPendingRequestsHighWaterMark(
-    CassCluster* cluster, unsigned num_requests) {
-    return cass_cluster_set_pending_requests_high_water_mark(cluster,
-        num_requests);
-}
-
-CassError CassDatastaxLibrary::CassClusterSetPendingRequestsLowWaterMark(
-    CassCluster* cluster, unsigned num_requests) {
-    return cass_cluster_set_pending_requests_low_water_mark(cluster,
-        num_requests);
-}
-
-CassError CassDatastaxLibrary::CassClusterSetWriteBytesHighWaterMark(
-    CassCluster* cluster, unsigned num_bytes) {
-    return cass_cluster_set_write_bytes_high_water_mark(cluster, num_bytes);
-}
-
-CassError CassDatastaxLibrary::CassClusterSetWriteBytesLowWaterMark(
-    CassCluster* cluster, unsigned num_bytes) {
-    return cass_cluster_set_write_bytes_low_water_mark(cluster, num_bytes);
 }
 
 void CassDatastaxLibrary::CassClusterSetWhitelistFiltering(
