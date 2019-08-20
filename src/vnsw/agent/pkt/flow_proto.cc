@@ -347,11 +347,6 @@ void FlowProto::EnqueueFlowEvent(FlowEvent *event) {
         break;
     }
 
-    case FlowEvent::SHRINK_FREE_LIST: {
-        queue = flow_tokenless_queue_[event->table_index()];
-        break;
-    }
-
     case FlowEvent::KSYNC_EVENT: {
         FlowEventKSync *ksync_event = static_cast<FlowEventKSync *>(event);
         FlowTableKSyncEntry *ksync_entry =
@@ -432,11 +427,6 @@ bool FlowProto::FlowEventHandler(FlowEvent *req, FlowTable *table) {
 
     case FlowEvent::GROW_FREE_LIST: {
         table->GrowFreeList();
-        break;
-    }
-
-    case FlowEvent::SHRINK_FREE_LIST: {
-        table->ShrinkFreeList();
         break;
     }
 
@@ -589,12 +579,6 @@ void FlowProto::CreateAuditEntry(const FlowKey &key, uint32_t flow_handle,
 
 void FlowProto::GrowFreeListRequest(FlowTable *table) {
     EnqueueFlowEvent(new FlowEvent(FlowEvent::GROW_FREE_LIST,
-                                   table->table_index()));
-    return;
-}
-
-void FlowProto::ShrinkFreeListRequest(FlowTable *table) {
-    EnqueueFlowEvent(new FlowEvent(FlowEvent::SHRINK_FREE_LIST,
                                    table->table_index()));
     return;
 }

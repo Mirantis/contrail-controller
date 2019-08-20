@@ -46,7 +46,6 @@
 const uint32_t FlowEntryFreeList::kInitCount;
 const uint32_t FlowEntryFreeList::kTestInitCount;
 const uint32_t FlowEntryFreeList::kGrowSize;
-const uint32_t FlowEntryFreeList::kShrinkSize;
 const uint32_t FlowEntryFreeList::kMinThreshold;
 const uint32_t FlowEntryFreeList::kMaxThreshold;
 
@@ -896,14 +895,9 @@ void FlowTable::GrowFreeList() {
     ksync_object_->GrowFreeList();
 }
 
-void FlowTable::ShrinkFreeList() {
-    free_list_.Shrink();
-    ksync_object_->ShrinkFreeList();
-}
-
 FlowEntryFreeList::FlowEntryFreeList(FlowTable *table) :
     table_(table), max_count_(0), grow_pending_(false),
-    shrink_pending_(false), total_alloc_(0), total_free_(0), free_list_() {
+    total_alloc_(0), total_free_(0), free_list_() {
     uint32_t count = kInitCount;
     if (table->agent()->test_mode()) {
         count = kTestInitCount;
@@ -937,20 +931,6 @@ void FlowEntryFreeList::Grow() {
     }
 }
 
-// Shrink FlowEntryFreeList if it's too large
-void FlowEntryFreeList::Shrink() {
-    if (free_list_.size() <= kMaxThreshold)
-        return;
-
-    for (uint32_t i = 0; i < kShrinkSize; ++i) {
-        FlowEntry *fe = &free_list_.front();
-        free_list_.pop_front();
-        delete fe;
-        --max_count_;
-    }
-    shrink_pending_ = false;
-}
-
 FlowEntry *FlowEntryFreeList::Allocate(const FlowKey &key) {
     assert(table_->ConcurrencyCheck(table_->flow_task_id()) == true);
     FlowEntry *flow = NULL;
@@ -980,11 +960,11 @@ void FlowEntryFreeList::Free(FlowEntry *flow) {
             table_->flow_logging_task_id(), false) == true));
     total_free_++;
     flow->Reset();
-    free_list_.push_back(*flow);
-    assert(flow->flow_mgmt_info() == NULL);
-    if (!shrink_pending_ && free_list_.size() > kMaxThreshold) {
-        shrink_pending_ = true;
-        FlowProto *proto = table_->agent()->pkt()->get_flow_proto();
-        proto->ShrinkFreeListRequest(table_);
+    if (free_list_.size() < kMaxThreshold) {
+        free_list_.push_back(*flow);
+        assert(flow->flow_mgmt_info() == NULL);
+    } else {
+        delete flow;
+        --max_count_;
     }
 }
