@@ -50,6 +50,10 @@ _IFACE_ROUTE_TABLE_NAME_PREFIX = 'NEUTRON_IFACE_RT'
 _IFACE_ROUTE_TABLE_NAME_PREFIX_REGEX = re.compile(
     '%s_%s_%s' % (_IFACE_ROUTE_TABLE_NAME_PREFIX, UUID_PATTERN, UUID_PATTERN))
 
+# VNC to neutron resource type
+_RESOURCE_VNC_TO_NEUTRON = {'virtual_network':
+                            'network'}
+
 class LocalVncApi(VncApi):
     def __init__(self, api_server_obj, *args, **kwargs):
         if api_server_obj:
@@ -521,6 +525,8 @@ class DBInterface(object):
             self._raise_contrail_exception('BadRequest',
                 resource=resource_type, msg=str(e))
         except OverQuota as e:
+            if resource_type in _RESOURCE_VNC_TO_NEUTRON:
+                resource_type = _RESOURCE_VNC_TO_NEUTRON[resource_type]
             self._raise_contrail_exception('OverQuota',
                 overs=[resource_type], msg=str(e))
         except AuthFailed as e:
@@ -568,8 +574,7 @@ class DBInterface(object):
                                               fields=fields,
                                               detail=detail,
                                               count=count,
-                                              filters=filters,
-                                              shared=True)
+                                              filters=filters)
     #end _virtual_network_list
 
     def _virtual_machine_interface_read(self, port_id=None, fq_name=None,
@@ -727,10 +732,13 @@ class DBInterface(object):
     #end _router_list_project
 
     def _ipam_list_project(self, project_id):
-        try:
-            project_uuid = str(uuid.UUID(project_id))
-        except (TypeError, ValueError, AttributeError):
-            return []
+        if project_id:
+            try:
+                project_uuid = str(uuid.UUID(project_id))
+            except (TypeError, ValueError, AttributeError):
+                return []
+        else:
+            project_uuid = None
 
         resp_dict = self._vnc_lib.network_ipams_list(parent_id=project_uuid)
 
@@ -772,10 +780,13 @@ class DBInterface(object):
     #end _security_group_entries_list_sg
 
     def _route_table_list_project(self, project_id):
-        try:
-            project_uuid = str(uuid.UUID(project_id))
-        except (TypeError, ValueError, AttributeError):
-            return []
+        if project_id:
+            try:
+                project_uuid = str(uuid.UUID(project_id))
+            except (TypeError, ValueError, AttributeError):
+                return []
+        else:
+            project_uuid = None
 
         resp_dict = self._vnc_lib.route_tables_list(parent_id=project_uuid)
 
@@ -783,21 +794,27 @@ class DBInterface(object):
     #end _route_table_list_project
 
     def _svc_instance_list_project(self, project_id):
-        try:
-            project_uuid = str(uuid.UUID(project_id))
-        except (TypeError, ValueError, AttributeError):
-            return []
+        if project_id:
+            try:
+                project_uuid = str(uuid.UUID(project_id))
+            except (TypeError, ValueError, AttributeError):
+                return []
+        else:
+            project_uuid = None
 
-        resp_dict = self._vnc_lib.service_instances_list(parent_id=project_id)
+        resp_dict = self._vnc_lib.service_instances_list(parent_id=project_uuid)
 
         return resp_dict['service-instances']
     #end _svc_instance_list_project
 
     def _policy_list_project(self, project_id):
-        try:
-            project_uuid = str(uuid.UUID(project_id))
-        except (TypeError, ValueError, AttributeError):
-            return []
+        if project_id:
+            try:
+                project_uuid = str(uuid.UUID(project_id))
+            except (TypeError, ValueError, AttributeError):
+                return []
+        else:
+            project_uuid = None
 
         resp_dict = self._vnc_lib.network_policys_list(parent_id=project_uuid)
 
@@ -1149,10 +1166,6 @@ class DBInterface(object):
 
         # get route table routes
         rt_q_dict['routes'] = rt_q_dict.pop('routes', None)
-        if rt_q_dict['routes']:
-            for route in rt_q_dict['routes']['route']:
-                if route['next_hop_type']:
-                    route['next_hop'] = route['next_hop_type']
         return rt_q_dict
     # end _route_table_vnc_to_neutron
 
@@ -3513,11 +3526,7 @@ class DBInterface(object):
                 project_ipams = self._ipam_list_project(p_id)
                 all_ipams.append(project_ipams)
         else:  # no filters
-            dom_projects = self._project_list_domain(None)
-            for project in dom_projects:
-                proj_id = project['uuid']
-                project_ipams = self._ipam_list_project(proj_id)
-                all_ipams.append(project_ipams)
+            all_ipams = [self._ipam_list_project(None)]
 
         # prune phase
         for project_ipams in all_ipams:
@@ -3597,11 +3606,7 @@ class DBInterface(object):
                 project_policys = self._policy_list_project(p_id)
                 all_policys.append(project_policys)
         else:  # no filters
-            dom_projects = self._project_list_domain(None)
-            for project in dom_projects:
-                proj_id = project['uuid']
-                project_policys = self._policy_list_project(proj_id)
-                all_policys.append(project_policys)
+            all_policys = [self._policy_list_project(None)]
 
         # prune phase
         for project_policys in all_policys:
@@ -3629,9 +3634,17 @@ class DBInterface(object):
     #end policy_count
 
     def _router_update_gateway(self, router_q, rtr_obj):
-        ext_gateway = router_q.get('external_gateway_info', None)
+        """
+        NOTE(gzimin): In case if router gateway is not updating
+        we can set param ext_gateway to old_ext_gateway if there
+        is no external_gateway_info in request. Then we check values
+        and if they are equal we just skip updating router gateway.
+        """
         old_ext_gateway = self._get_external_gateway_info(rtr_obj)
+        ext_gateway = router_q.get('external_gateway_info', old_ext_gateway)
         if ext_gateway or old_ext_gateway:
+            if ext_gateway == old_ext_gateway:
+                return
             network_id = None
             if ext_gateway:
                 network_id = ext_gateway.get('network_id', None)
@@ -3868,6 +3881,10 @@ class DBInterface(object):
                     msg='Router port must have exactly one fixed IP')
             subnet_id = fixed_ips[0]['subnet_id']
             subnet = self.subnet_read(subnet_id)
+            if not IPAddress(subnet['gateway_ip']):
+                self._raise_contrail_exception(
+                    'BadRequest', resource='router',
+                    msg='Subnet for router interface must have a gateway IP')
             self._check_for_dup_router_subnet(router_id,
                                               port['network_id'],
                                               subnet['id'],
@@ -3882,7 +3899,7 @@ class DBInterface(object):
                      'RouterInterfaceNotFoundForSubnet',
                      router_id=router_id,
                      subnet_id=subnet_id)
-            if not subnet['gateway_ip']:
+            if not subnet['gateway_ip'] or not IPAddress(subnet['gateway_ip']):
                 self._raise_contrail_exception(
                     'BadRequest', resource='router',
                     msg='Subnet for router interface must have a gateway IP')
@@ -4861,11 +4878,7 @@ class DBInterface(object):
             project_rts = self._route_table_list_project(p_id)
             all_rts.append(project_rts)
         else:  # no filters
-            dom_projects = self._project_list_domain(None)
-            for project in dom_projects:
-                proj_id = project['uuid']
-                project_rts = self._route_table_list_project(proj_id)
-                all_rts.append(project_rts)
+            all_rts = [self._route_table_list_project(None)]
 
         # prune phase
         for project_rts in all_rts:
@@ -4924,11 +4937,7 @@ class DBInterface(object):
             project_sis = self._svc_instance_list_project(p_id)
             all_sis.append(project_sis)
         else:  # no filters
-            dom_projects = self._project_list_domain(None)
-            for project in dom_projects:
-                proj_id = project['uuid']
-                project_sis = self._svc_instance_list_project(proj_id)
-                all_sis.append(project_sis)
+            all_sis = [self._svc_instance_list_project(None)]
 
         # prune phase
         for project_sis in all_sis:
