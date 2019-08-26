@@ -23,7 +23,7 @@ class VrouterEventManager(EventManager):
             supervisor_serverurl = "unix:///var/run/supervisord_vrouter.sock"
 
         type_info = EventManagerTypeInfo(
-            package_name = 'contrail-vrouter-common',
+            package_name = 'contrail-vrouter-agent',
             module_type = Module.COMPUTE_NODE_MGR,
             object_table = 'ObjectVRouter',
             supervisor_serverurl = supervisor_serverurl,

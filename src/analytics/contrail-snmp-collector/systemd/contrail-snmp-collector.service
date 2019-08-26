@@ -1,8 +1,10 @@
 [Unit]
+StartLimitInterval=0
 Description="Contrail SNMP Collector"
 After=network.target
 
 [Service]
+RestartSec=3s
 Type=simple
 Environment=SNMPCONFPATH=/etc/contrail
 ExecStart=/usr/bin/contrail-snmp-collector
