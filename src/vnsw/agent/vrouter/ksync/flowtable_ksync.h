@@ -169,7 +169,6 @@ public:
     static const uint32_t kInitCount = (25 * 1000);
     static const uint32_t kTestInitCount = (5 * 1000);
     static const uint32_t kGrowSize = (1 * 1000);
-    static const uint32_t kShrinkSize = (4 * 1000);
     static const uint32_t kMinThreshold = (4 * 1000);
     static const uint32_t kMaxThreshold = (100 * 1000);
 
@@ -189,7 +188,6 @@ public:
     FlowTableKSyncEntry *Allocate(const KSyncEntry *key);
     void Free(FlowTableKSyncEntry *flow);
     void Grow();
-    void Shrink();
     uint32_t max_count() const { return max_count_; }
     uint32_t free_count() const { return free_list_.size(); }
     uint32_t alloc_count() const { return (max_count_ - free_list_.size()); }
@@ -200,7 +198,6 @@ private:
     FlowTableKSyncObject *object_;
     uint32_t max_count_;
     bool grow_pending_;
-    bool shrink_pending_;
     uint64_t total_alloc_;
     uint64_t total_free_;
     FreeList free_list_;
@@ -233,7 +230,6 @@ public:
     uint32_t GetKey(KSyncEntry *entry);
 
     void GrowFreeList();
-    void ShrinkFreeList();
     KSyncFlowEntryFreeList *free_list() { return &free_list_; }
 
     void NetlinkAck(KSyncEntry *entry, KSyncEntry::KSyncEvent event);
