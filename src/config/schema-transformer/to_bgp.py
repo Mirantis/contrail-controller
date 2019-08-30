@@ -332,6 +332,18 @@ class SchemaTransformer(object):
             except Exception as e:
                 self.logger.error("Error in reinit virtual network %s: %s" % (
                     vn.get_fq_name_str(), str(e)))
+
+        # NOTE(skreys): This fixes the issue of route targets being temporarily
+        # removed from SNAT routing instance during the reinit procedure.
+        # Consider it a workaround, as we call VMI reinit twice - suboptimal.
+        # A better solution though could be to call "locate" method of
+        # VirtualMachineInterfaceST class on demand
+        VirtualMachineInterfaceST.reinit()
+        gevent.sleep(0.001)
+        InstanceIpST.reinit()
+        gevent.sleep(0.001)
+        RouteTableST.reinit()
+
         for ri_name, ri_obj in ri_dict.items():
             try:
                 RoutingInstanceST.locate(ri_name, ri_obj)
@@ -351,8 +363,6 @@ class SchemaTransformer(object):
         VirtualMachineInterfaceST.reinit()
 
         gevent.sleep(0.001)
-        InstanceIpST.reinit()
-        gevent.sleep(0.001)
         FloatingIpST.reinit()
         AliasIpST.reinit()
 
@@ -363,7 +373,6 @@ class SchemaTransformer(object):
         gevent.sleep(0.001)
         PortTupleST.reinit()
         BgpAsAServiceST.reinit()
-        RouteTableST.reinit()
 
         # evaluate virtual network objects first because other objects,
         # e.g. vmi, depend on it.
