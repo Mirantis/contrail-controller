@@ -83,6 +83,8 @@
              description='In case monitor protocol is HTTP, URL to be used. In case of ICMP, ip address'/>
         <xsd:element name='expected-codes' type='xsd:string' required='optional' operations='CRUD'
              description='In case monitor protocol is HTTP, expected return code for HTTP operations like 200 ok.'/>
+        <xsd:element name='name' type='xsd:string' required='optional' operations='CRUD'
+             description='Defined health monitor name'/>
     </xsd:sequence>
 </xsd:complexType>
 
@@ -181,6 +183,8 @@
              description='Ip address of the member'/>
         <xsd:element name='subnet-id' type='UuidStringType' required='optional' operation='CR'
              description='UUID of the subnet from where the members are reachable.'/>
+        <xsd:element name='name' type='xsd:string' required='optional' operations='CR'
+             description='Defined load balancer member name'/>
     </xsd:sequence>
 </xsd:complexType>
 

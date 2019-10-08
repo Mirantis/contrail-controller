@@ -525,7 +525,8 @@ class LoadbalancerAgent(Agent):
         'max_retries': 'max_retries',
         'http_method': 'http_method',
         'url_path': 'url_path',
-        'expected_codes': 'expected_codes'
+        'expected_codes': 'expected_codes',
+        'name': 'name',
     }
 
     def hm_get_reqdict(self, health_monitor):
@@ -561,6 +562,7 @@ class LoadbalancerAgent(Agent):
         'weight': 'weight',
         'address': 'address',
         'subnet_id': 'subnet_id',
+        'name': 'name',
     }
 
     def loadbalancer_member_get_reqdict(self, member):
