@@ -67,6 +67,36 @@ class DatabaseEventManager(EventManager):
         self.cassandra_status_old.thread_pool_stats = []
     # end __init__
 
+    def _get_cassandra_config_option(self, config):
+        (linux_dist, x, y) = platform.linux_distribution()
+        if (linux_dist in ['Ubuntu', 'debian']):
+            yamlstream = open("/etc/cassandra/cassandra.yaml", 'r')
+        else:
+            yamlstream = open("/etc/cassandra/conf/cassandra.yaml", 'r')
+
+        cfg = yaml.safe_load(yamlstream)
+        yamlstream.close()
+        return cfg[config]
+
+    def msg_log(self, msg, level):
+        self.sandesh_global.logger().log(SandeshLogger.get_py_logger_level(
+                            level), msg)
+
+    def send_process_state_db(self, group_names):
+        self.send_process_state_db_base(
+            group_names, ProcessInfo)
+
+    def send_nodemgr_process_status(self):
+        self.send_nodemgr_process_status_base(
+            ProcessStateNames, ProcessState, ProcessStatus)
+
+    def get_node_third_party_process_dict(self):
+        return self.third_party_process_dict 
+
+    def get_process_state(self, fail_status_bits):
+        return self.get_process_state_base(
+            fail_status_bits, ProcessStateNames, ProcessState)
+
     def get_failbits_nodespecific_desc(self, fail_status_bits):
         description = ""
         if fail_status_bits & self.FAIL_STATUS_DISK_SPACE:
