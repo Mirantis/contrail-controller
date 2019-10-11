@@ -1,4 +1,5 @@
 [Unit]
+StartLimitInterval=0
 Description="Contrail API"
 After=network.target
 
