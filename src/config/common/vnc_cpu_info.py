@@ -26,7 +26,7 @@ class CpuInfo(object):
                  time_interval, server_ip=None):
         # store cpuinfo at init
         self._module_id = module_id
-        self._instance_id = instance_id 
+        self._instance_id = instance_id
         self._sysinfo = sysinfo_req
         self._sandesh = sandesh
         self._time_interval = time_interval
@@ -42,6 +42,9 @@ class CpuInfo(object):
         self._curr_ip = server_ip
         self._new_ip = None
 
+        if not hasattr(psutil, 'NUM_CPUS'):
+            psutil.NUM_CPUS = psutil.cpu_count()
+
         # spawn a Greenlet object to do periodic collect and send.
         vnc_greenlets.VncGreenlet("VNC CPU Info", self.cpu_stats)
     # end __init__
@@ -56,6 +59,11 @@ class CpuInfo(object):
 
     def cpu_stats(self):
         cfg_process = psutil.Process(os.getpid())
+        if not hasattr(cfg_process, 'get_memory_info'):
+            cfg_process.get_memory_info = self._process.memory_info
+        if not hasattr(cfg_process, 'get_cpu_percent'):
+            cfg_process.get_cpu_percent = self._process.cpu_percent
+
         while True:
             # collect Vmsizes
             self._ip_change = 0
