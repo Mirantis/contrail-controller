@@ -1,8 +1,10 @@
 [Unit]
+StartLimitInterval=0
 Description="Contrail ISSU run sync"
 After=network.target
 
 [Service]
+RestartSec=3s
 Type=simple
 ExecStart=/usr/bin/contrail-issu-run-sync --conf /etc/contrail/contrail-issu.conf
 PIDFile=/var/run/contrail/contrail-issu-run-sync.pid
