@@ -144,7 +144,7 @@ class LoadbalancerAgent(Agent):
             if LoadbalancerSM.get(lb_id):
                 continue
             # Delete the lb from the driver
-            driver = self._get_driver_for_provider(config_data['provider'])
+            driver = self._get_driver_for_provider(config_data.get('provider'))
             driver.delete_loadbalancer(config_data)
             self._object_db.loadbalancer_remove(lb_id)
             self._delete_driver_for_loadbalancer(lb_id)
@@ -152,7 +152,7 @@ class LoadbalancerAgent(Agent):
             if LoadbalancerPoolSM.get(pool_id):
                 continue
             # Delete the pool from the driver
-            driver = self._get_driver_for_provider(config_data['provider'])
+            driver = self._get_driver_for_provider(config_data.get('provider'))
             driver.delete_pool(config_data)
             self._object_db.pool_remove(pool_id)
             self._delete_driver_for_pool(pool_id)
@@ -190,6 +190,8 @@ class LoadbalancerAgent(Agent):
     # end unload_driver
 
     def _get_driver_for_provider(self, provider_name):
+        if not provider_name:
+            provider_name = self._default_provider
         return self._loadbalancer_driver[provider_name]
     # end _get_driver_for_provider
 
@@ -493,7 +495,7 @@ class LoadbalancerAgent(Agent):
                'subnet_id': props['vip_subnet_id'],
                'address': props['vip_address'],
                'port_id': lb.virtual_machine_interface,
-               'provider': lb.provider,
+               'provider': lb.provider or self._default_provider,
                'status': self._get_object_status(lb)}
 
         return res
