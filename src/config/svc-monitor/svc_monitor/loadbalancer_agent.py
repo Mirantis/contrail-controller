@@ -128,7 +128,7 @@ class LoadbalancerAgent(Agent):
             if HealthMonitorSM.get(hm_id):
                 continue
             hm = config_data
-            if not hasattr(hm, 'provider'):
+            if hm is None or not hm.get('provider'):
                 continue
             driver = self._get_driver_for_provider(hm['provider'])
             pools = set()
@@ -367,6 +367,8 @@ class LoadbalancerAgent(Agent):
 
     def loadbalancer_health_monitor_add(self, obj):
         hm = self.hm_get_reqdict(obj)
+        if 'provider' not in hm:
+            hm['provider'] = self._default_provider
         current_pools = hm['pools'] or []
         old_pools = []
         if obj.last_sent:
@@ -392,14 +394,14 @@ class LoadbalancerAgent(Agent):
                 driver.update_health_monitor(old_hm, hm, pool)
         except Exception:
             pass
-        if hm['provider'] == 'native':
+        if hm.get('provider') == 'native':
             self._object_db.health_monitor_config_insert(hm['id'], hm)
         return hm
     # end loadbalancer_health_monitor_add
 
     def suspend_loadbalancer_health_monitor(self, obj):
         hm = self._object_db.health_monitor_config_get(obj.uuid)
-        if not hasattr(hm, 'provider'):
+        if hm is None or not hm.get('provider'):
             return
         pools = set()
         for i in hm['pools'] or []:
@@ -417,7 +419,7 @@ class LoadbalancerAgent(Agent):
         if obj.last_sent is None:
             return
         hm = obj.last_sent
-        if not hasattr(hm, 'provider'):
+        if hm is None or not hm.get('provider'):
             return
         pools = set()
         for i in hm['pools'] or []:
@@ -523,7 +525,8 @@ class LoadbalancerAgent(Agent):
         'max_retries': 'max_retries',
         'http_method': 'http_method',
         'url_path': 'url_path',
-        'expected_codes': 'expected_codes'
+        'expected_codes': 'expected_codes',
+        'name': 'name',
     }
 
     def hm_get_reqdict(self, health_monitor):
@@ -559,6 +562,7 @@ class LoadbalancerAgent(Agent):
         'weight': 'weight',
         'address': 'address',
         'subnet_id': 'subnet_id',
+        'name': 'name',
     }
 
     def loadbalancer_member_get_reqdict(self, member):
