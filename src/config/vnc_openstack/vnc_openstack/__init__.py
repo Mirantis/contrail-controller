@@ -452,6 +452,15 @@ class OpenstackDriver(vnc_plugin_base.Resync):
 
     def _ksv3_domain_id_to_uuid(self, domain_id):
         if domain_id == 'default':
+            if self._vnc_default_domain_id is None:
+                self._get_vnc_conn()
+
+                vnc_domains = self._vnc_lib.domains_list()['domains']
+                for dom in vnc_domains:
+                    if dom['fq_name'] == ['default-domain']:
+                        self._vnc_default_domain_id = dom['uuid']
+                        break
+
             return self._vnc_default_domain_id
 
         return str(uuid.UUID(domain_id))
