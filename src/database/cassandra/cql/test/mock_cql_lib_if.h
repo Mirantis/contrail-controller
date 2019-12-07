@@ -26,14 +26,6 @@ class MockCassLibrary : public interface::CassLibrary {
         const char* username, const char* password));
     MOCK_METHOD2(CassClusterSetNumThreadsIo, CassError (CassCluster* cluster,
         unsigned num_threads));
-    MOCK_METHOD2(CassClusterSetPendingRequestsHighWaterMark, CassError (
-        CassCluster* cluster, unsigned num_requests));
-    MOCK_METHOD2(CassClusterSetPendingRequestsLowWaterMark, CassError (
-        CassCluster* cluster, unsigned num_requests));
-    MOCK_METHOD2(CassClusterSetWriteBytesHighWaterMark, CassError (
-        CassCluster* cluster, unsigned num_bytes));
-    MOCK_METHOD2(CassClusterSetWriteBytesLowWaterMark, CassError (
-        CassCluster* cluster, unsigned num_bytes));
     MOCK_METHOD2(CassClusterSetWhitelistFiltering, void (
         CassCluster* cluster, const char* hosts));
     MOCK_METHOD2(CassClusterSetRequestTimeout, void (
