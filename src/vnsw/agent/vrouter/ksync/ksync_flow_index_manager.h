@@ -40,6 +40,8 @@ public:
         tbb::mutex mutex_;
         FlowEntryPtr owner_;
     };
+    //typedef std::vector<IndexEntry> IndexList;
+
     KSyncFlowIndexManager(KSync *ksync);
     virtual ~KSyncFlowIndexManager();
     void InitDone(uint32_t count);
