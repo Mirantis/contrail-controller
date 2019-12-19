@@ -616,6 +616,11 @@ void AgentParam::ParseDhcpRelayModeArguments
     GetOptValue<bool>(var_map, dhcp_relay_mode_, "DEFAULT.dhcp_relay_mode");
 }
 
+void AgentParam::ParseStatsCollectionArguments
+    (const boost::program_options::variables_map &var_map) {
+    GetOptValue<bool>(var_map, disable_stats_collection_, "DEFAULT.disable_stats_collection");
+}
+
 void AgentParam::ParseSimulateEvpnTorArguments
     (const boost::program_options::variables_map &var_map) {
     GetOptValue<bool>(var_map, simulate_evpn_tor_, "DEFAULT.simulate_evpn_tor");
@@ -805,6 +810,7 @@ void AgentParam::ProcessArguments() {
     ParseFlowArguments(var_map_);
     ParseMetadataProxyArguments(var_map_);
     ParseDhcpRelayModeArguments(var_map_);
+    ParseStatsCollectionArguments(var_map_);
     ParseServiceInstanceArguments(var_map_);
     ParseSimulateEvpnTorArguments(var_map_);
     ParseAgentInfoArguments(var_map_);
@@ -1206,6 +1212,7 @@ void AgentParam::LogConfig() const {
         LOG(DEBUG, "Gateway Mode                : None");
 
     LOG(DEBUG, "DHCP Relay Mode             : " << dhcp_relay_mode_);
+    LOG(DEBUG, "Stats Collection Disabled   : " << disable_stats_collection_);
     if (simulate_evpn_tor_) {
         LOG(DEBUG, "Simulate EVPN TOR           : " << simulate_evpn_tor_);
     }
@@ -1329,9 +1336,9 @@ AgentParam::AgentParam(bool enable_flow_options,
         vrouter_stats_interval_(kVrouterStatsInterval),
         vmware_physical_port_(""), test_mode_(false), tree_(),
         vgw_config_table_(new VirtualGatewayConfigTable() ),
-        dhcp_relay_mode_(false), xmpp_auth_enable_(false),
-        xmpp_server_cert_(""), xmpp_server_key_(""), xmpp_ca_cert_(""),
-        xmpp_dns_auth_enable_(false),
+        dhcp_relay_mode_(false), disable_stats_collection_(false),
+        xmpp_auth_enable_(false), xmpp_server_cert_(""), xmpp_server_key_(""),
+        xmpp_ca_cert_(""), xmpp_dns_auth_enable_(false),
         simulate_evpn_tor_(false), si_netns_command_(),
         si_docker_command_(), si_netns_workers_(0),
         si_netns_timeout_(0), si_lb_ssl_cert_path_(), si_lbaas_auth_conf_(),
@@ -1421,6 +1428,8 @@ AgentParam::AgentParam(bool enable_flow_options,
          "Hostname of compute-node")
         ("DEFAULT.dhcp_relay_mode", opt::bool_switch(&dhcp_relay_mode_),
          "Enable / Disable DHCP relay of DHCP packets from virtual instance")
+        ("DEFAULT.disable_stats_collection", opt::bool_switch(&disable_stats_collection_),
+         "Disable VMI and VN stats collection and sending to collector")
         ("DEFAULT.agent_name", opt::value<string>(),
          "Agent Name")
         ("DEFAULT.http_server_port",
