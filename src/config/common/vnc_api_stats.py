@@ -24,8 +24,10 @@ def log_api_stats(func):
             raise
         finally:
             # Collect api stats and send to analytics
-            statistics.collect()
-            statistics.sendwith(api_server_obj._sandesh)
+            # if it's defined in config
+            if api_server_obj._args.enable_http_resource_statistics:
+                statistics.collect()
+                statistics.sendwith(api_server_obj._sandesh)
     return wrapper
 
 
