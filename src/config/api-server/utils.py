@@ -88,7 +88,7 @@ def parse_args(args_str):
         'object_cache_exclude_types': '', # csv of object types to *not* cache
         'db_engine': 'cassandra',
         'max_request_size': 1024000,
-        'enable_http_resource_statistics' : True,
+        'disable_vnc_api_stats' : False,
     }
     defaults.update(SandeshConfig.get_default_options(['DEFAULTS']))
     # keystone options
@@ -138,9 +138,9 @@ def parse_args(args_str):
             if 'default_encoding' in config.options('DEFAULTS'):
                 default_encoding = config.get('DEFAULTS', 'default_encoding')
                 gen.resource_xsd.ExternalEncoding = default_encoding
-            if 'enable_http_resource_statistics' in config.options('DEFAULTS'):
-                defaults['enable_http_resource_statistics'] = config.getboolean(
-                    'DEFAULTS', 'enable_http_resource_statistics')
+            if 'disable_vnc_api_stats' in config.options('DEFAULTS'):
+                defaults['disable_vnc_api_stats'] = config.getboolean(
+                    'DEFAULTS', 'disable_vnc_api_stats')
         if 'KEYSTONE' in config.sections():
             ksopts.update(dict(config.items("KEYSTONE")))
             if 'keystone_sync_on_demand' in config.options('KEYSTONE'):

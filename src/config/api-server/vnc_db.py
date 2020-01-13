@@ -679,10 +679,12 @@ class VncDbClient(object):
                  db_credential=None, obj_cache_entries=0,
                  obj_cache_exclude_types=None, db_engine='cassandra',
                  connection=None, cassandra_use_ssl=False,
-                 cassandra_ca_certs=None, **kwargs):
+                 cassandra_ca_certs=None, disable_vnc_api_stats=False,
+                 **kwargs):
         self._db_engine = db_engine
         self._api_svr_mgr = api_svr_mgr
         self._sandesh = api_svr_mgr._sandesh
+        self._disable_vnc_api_stats = disable_vnc_api_stats
 
         self._UVEMAP = {
             "virtual_network" : ("ObjectVNTable", False),
@@ -756,6 +758,10 @@ class VncDbClient(object):
         response_time_in_usec = ((response_time.days*24*60*60) +
                                  (response_time.seconds*1000000) +
                                  response_time.microseconds)
+
+        # If logging is disabled, do nothing here
+        if self._disable_vnc_api_stats:
+            return
 
         # Create latency stats object
         try:

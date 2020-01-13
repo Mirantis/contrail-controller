@@ -25,7 +25,7 @@ def log_api_stats(func):
         finally:
             # Collect api stats and send to analytics
             # if it's defined in config
-            if api_server_obj._args.enable_http_resource_statistics:
+            if not api_server_obj._args.disable_vnc_api_stats:
                 statistics.collect()
                 statistics.sendwith(api_server_obj._sandesh)
     return wrapper
