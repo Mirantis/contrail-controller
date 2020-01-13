@@ -253,6 +253,7 @@ public:
         return stale_interface_cleanup_timeout_;
     }
     bool dhcp_relay_mode() const {return dhcp_relay_mode_;}
+    bool stats_collection_disabled() const {return disable_stats_collection_;}
     bool xmpp_auth_enabled() const {return xmpp_auth_enable_;}
     std::string xmpp_server_cert() const { return xmpp_server_cert_;}
     std::string xmpp_server_key() const { return xmpp_server_key_;}
@@ -604,6 +605,8 @@ private:
         (const boost::program_options::variables_map &v);
     void ParseDhcpRelayModeArguments
         (const boost::program_options::variables_map &var_map);
+    void ParseStatsCollectionArguments
+        (const boost::program_options::variables_map &var_map);
     void ParseSimulateEvpnTorArguments
         (const boost::program_options::variables_map &var_map);
     void ParseServiceInstanceArguments
@@ -705,6 +708,7 @@ private:
     boost::property_tree::ptree tree_;
     std::auto_ptr<VirtualGatewayConfigTable> vgw_config_table_;
     bool dhcp_relay_mode_;
+    bool disable_stats_collection_;
     bool xmpp_auth_enable_;
     std::string xmpp_server_cert_;
     std::string xmpp_server_key_;
