@@ -575,9 +575,14 @@ class InstanceManager(object):
                 vmi_obj.set_virtual_machine_interface_properties(if_properties)
                 vmi_updated = True
 
+        if ('port-security-enabled' in nic and nic['port-security-enabled'] !=
+                vmi_obj.get_port_security_enabled()):
+            vmi_obj.set_port_security_enabled(nic['port-security-enabled'])
+            vmi_updated = True
+
         if (st.params.get('service_mode') in ['in-network', 'in-network-nat'] and
                 proj_obj.name != 'default-project'):
-            if not vmi_sg:
+            if not vmi_sg and vmi_obj.get_port_security_enabled():
                 sg_obj = self._get_default_security_group(vn_obj)
                 if sg_obj:
                     vmi_obj.set_security_group(sg_obj)
@@ -588,10 +593,6 @@ class InstanceManager(object):
                 rt_obj = self._set_static_routes(nic, si)
                 vmi_obj.set_interface_route_table(rt_obj)
                 vmi_updated = True
-
-        if 'port-security-enabled' in nic:
-            vmi_obj.set_port_security_enabled(nic['port-security-enabled'])
-            vmi_updated = True
 
         if vmi_create:
             if pi:
