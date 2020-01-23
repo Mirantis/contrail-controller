@@ -41,4 +41,3 @@ lib = env.Library('gunit',
                    Dir('.').abspath + '/gmock/gmock-all.cc'])
 
 env.Install('#/build/lib', lib)
-

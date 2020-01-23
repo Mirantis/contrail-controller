@@ -13,6 +13,7 @@ import vnc_quota
 import cfgm_common
 from pysandesh.sandesh_base import Sandesh, SandeshSystem
 from pysandesh.gen_py.sandesh.ttypes import SandeshLevel
+from vnc_cfg_types import VirtualNetworkServer
 
 _WEB_HOST = '0.0.0.0'
 _WEB_PORT = 8082
@@ -80,6 +81,7 @@ def parse_args(args_str):
         'kombu_ssl_keyfile': '',
         'kombu_ssl_certfile': '',
         'kombu_ssl_ca_certs': '',
+        'override_rpf_default_by': None,
         'max_request_size': 1024000,
     }
     # ssl options
@@ -101,12 +103,24 @@ def parse_args(args_str):
         'insecure': True,
         'cafile': ''
     }
+
     # cassandra options
     cassandraopts = {
-        'cassandra_user'     : None,
-        'cassandra_password' : None
+        'cassandra_user': None,
+        'cassandra_password': None
     }
 
+    # RPF valid options
+    rpf_valid_values = {
+        'enable': 'enable',
+        'enabled': 'enable',
+        'on': 'enable',
+        '1': 'enable',
+        'disable': 'disable',
+        'disabled': 'disable',
+        'off': 'disable',
+        '0': 'disable',
+    }
 
     config = None
     if args.conf_file:
@@ -120,6 +134,9 @@ def parse_args(args_str):
             if 'default_encoding' in config.options('DEFAULTS'):
                 default_encoding = config.get('DEFAULTS', 'default_encoding')
                 gen.resource_xsd.ExternalEncoding = default_encoding
+            if 'override_rpf_default_by' in config.options('DEFAULTS'):
+                defaults['override_rpf_default_by'] = config.get(
+                    'DEFAULTS', 'override_rpf_default_by')
         if 'SECURITY' in config.sections() and\
                 'use_certs' in config.options('SECURITY'):
             if config.getboolean('SECURITY', 'use_certs'):
@@ -134,7 +151,7 @@ def parse_args(args_str):
                 except ValueError:
                     pass
         if 'CASSANDRA' in config.sections():
-                cassandraopts.update(dict(config.items('CASSANDRA')))
+            cassandraopts.update(dict(config.items('CASSANDRA')))
 
     # Override with CLI options
     # Don't surpress add_help here so it will handle -h
@@ -202,8 +219,8 @@ def parse_args(args_str):
         help="Port to provide service on, default %s" % (_WEB_PORT))
     parser.add_argument(
         "--admin_port",
-        help="Port with local auth for admin access, default %s"
-              % (_ADMIN_PORT))
+        help="Port with local auth for admin access, default %s" %
+        (_ADMIN_PORT))
     parser.add_argument(
         "--collectors",
         help="List of VNC collectors in ip:port format",
@@ -222,8 +239,8 @@ def parse_args(args_str):
         help="Severity level for local logging of sandesh messages")
     parser.add_argument(
         "--logging_level",
-        help=("Log level for python logging: DEBUG, INFO, WARN, ERROR default: %s"
-              % defaults['logging_level']))
+        help=("Log level for python logging: " \
+            "DEBUG, INFO, WARN, ERROR default: %s" % defaults['logging_level']))
     parser.add_argument(
         "--logging_conf",
         help=("Optional logging configuration file, default: None"))
@@ -239,13 +256,16 @@ def parse_args(args_str):
     parser.add_argument(
         "--trace_file",
         help="Filename for the errors backtraces to be written to")
-    parser.add_argument("--use_syslog",
+    parser.add_argument(
+        "--use_syslog",
         action="store_true",
         help="Use syslog for logging")
-    parser.add_argument("--syslog_facility",
+    parser.add_argument(
+        "--syslog_facility",
         help="Syslog facility to receive log lines")
     parser.add_argument(
-        "--multi_tenancy", action="store_true",
+        "--multi_tenancy",
+        action="store_true",
         help="Validate resource permissions (implies token validation)")
     parser.add_argument(
         "--aaa_mode", choices=cfgm_common.AAA_MODE_VALID_VALUES,
@@ -286,30 +306,43 @@ def parse_args(args_str):
     parser.add_argument(
         "--max_requests", type=int,
         help="Maximum number of concurrent requests served by api server")
-    parser.add_argument("--cassandra_user",
-            help="Cassandra user name")
-    parser.add_argument("--cassandra_password",
-            help="Cassandra password")
-    parser.add_argument("--sandesh_send_rate_limit", type=int,
-            help="Sandesh send rate limit in messages/sec.")
-    parser.add_argument("--ifmap_health_check_interval",
-            help="Interval seconds to check for ifmap health, default 60")
-    parser.add_argument("--stale_lock_seconds",
-            help="Time after which lock without resource is stale, default 60")
+    parser.add_argument(
+        "--cassandra_user",
+        help="Cassandra user name")
+    parser.add_argument(
+        "--cassandra_password",
+        help="Cassandra password")
+    parser.add_argument(
+        "--sandesh_send_rate_limit", type=int,
+        help="Sandesh send rate limit in messages/sec.")
+    parser.add_argument(
+        "--ifmap_health_check_interval",
+        help="Interval seconds to check for ifmap health, default 60")
+    parser.add_argument(
+        "--stale_lock_seconds",
+        help="Time after which lock without resource is stale, default 60")
     parser.add_argument( "--cloud_admin_role",
         help="Role name of cloud administrator")
-    parser.add_argument( "--global_read_only_role",
+    parser.add_argument(
+        "--global_read_only_role",
         help="Role name of user with Read-Only access to all objects")
+    parser.add_argument(
+        "--override_rpf_default_by",
+        nargs="?",
+        help="RPF default value to use when creating network"
+    )
     parser.add_argument("--max_request_size", type=int,
             help="Maximum size of bottle requests served by api server")
     args_obj, remaining_argv = parser.parse_known_args(remaining_argv)
     args_obj.conf_file = args.conf_file
     args_obj.config_sections = config
-    if type(args_obj.cassandra_server_list) is str:
-        args_obj.cassandra_server_list =\
-            args_obj.cassandra_server_list.split()
-    if type(args_obj.collectors) is str:
+    if isinstance(args_obj.cassandra_server_list, (str, )):
+        args_obj.cassandra_server_list = args_obj.cassandra_server_list.split()
+    if isinstance(args_obj.collectors, (str, )):
         args_obj.collectors = args_obj.collectors.split()
+    if isinstance(args_obj.override_rpf_default_by, (str, )):
+        VirtualNetworkServer.rpf_default = rpf_valid_values.get(
+            args_obj.override_rpf_default_by.lower())
 
     return args_obj, remaining_argv
 # end parse_args
@@ -358,8 +391,8 @@ def get_filters(data, skips=None):
     if not data:
         return res
 
-    for filter in data.split(','):
-        key, value = filter.split('==')
+    for param_filter in data.split(','):
+        key, value = param_filter.split('==')
         try:
             value = json.loads(value)
         except ValueError:
