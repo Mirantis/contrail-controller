@@ -29,6 +29,7 @@ public:
     const std::string & named_log_file() const { return named_log_file_; }
     const std::string & rndc_config_file() const { return rndc_config_file_; }
     const std::string & rndc_secret() const { return rndc_secret_; }
+    const std::string & resolv_conf_file() const { return resolv_conf_file_; }
     const std::string & named_max_cache_size() const {
         return named_max_cache_size_;
     }
@@ -110,6 +111,7 @@ private:
     std::string rndc_config_file_;
     std::string rndc_secret_;
     std::string named_max_cache_size_;
+    std::string resolv_conf_file_;
     uint16_t named_max_retransmissions_;
     uint16_t named_retransmission_interval_;
 
