@@ -1677,7 +1677,11 @@ class VncApiServer(object):
         rest_trace.request_data = req_data
 
         # Also log keystone response time against this request id,
-        # before returning the trace message.
+        # before returning the trace message. Return if logging
+        # is disabled by configuration
+        if self._args.disable_vnc_api_stats:
+            return rest_trace
+
         if ((get_context().get_keystone_response_time()) is not None):
             response_time = get_context().get_keystone_response_time()
             response_time_in_usec = ((response_time.days*24*60*60) +
@@ -2687,7 +2691,8 @@ class VncApiServer(object):
             obj_cache_exclude_types=obj_cache_exclude_types,
             connection=rdbms_connection,
             cassandra_use_ssl=self._args.cassandra_use_ssl,
-            cassandra_ca_certs=self._args.cassandra_ca_certs)
+            cassandra_ca_certs=self._args.cassandra_ca_certs,
+            disable_vnc_api_stats=self._args.disable_vnc_api_stats)
 
         #TODO refacter db connection management.
         self._addr_mgmt._get_db_conn()
@@ -2949,8 +2954,7 @@ class VncApiServer(object):
             tag.display_name = type_str
             self.create_singleton_entry(tag, user_visible=False)
 
-        if int(self._args.worker_id) == 0:
-            self._db_conn.db_resync()
+        self._db_conn.db_resync()
 
         # make default ipam available across tenants for backward compatability
         obj_type = 'network_ipam'

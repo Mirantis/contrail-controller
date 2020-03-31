@@ -215,6 +215,9 @@ public:
             return 0;
         return dns_client_port_;
     }
+    const std::string &dns_def_resolv_file() const {
+        return dns_def_resolv_file_;
+    }
     const uint32_t dns_timeout() const { return dns_timeout_; }
     const uint32_t dns_max_retries() const { return dns_max_retries_; }
     const uint16_t mirror_client_port() const {
@@ -250,6 +253,7 @@ public:
         return stale_interface_cleanup_timeout_;
     }
     bool dhcp_relay_mode() const {return dhcp_relay_mode_;}
+    bool stats_collection_disabled() const {return disable_stats_collection_;}
     bool xmpp_auth_enabled() const {return xmpp_auth_enable_;}
     std::string xmpp_server_cert() const { return xmpp_server_cert_;}
     std::string xmpp_server_key() const { return xmpp_server_key_;}
@@ -601,6 +605,8 @@ private:
         (const boost::program_options::variables_map &v);
     void ParseDhcpRelayModeArguments
         (const boost::program_options::variables_map &var_map);
+    void ParseStatsCollectionArguments
+        (const boost::program_options::variables_map &var_map);
     void ParseSimulateEvpnTorArguments
         (const boost::program_options::variables_map &var_map);
     void ParseServiceInstanceArguments
@@ -650,6 +656,7 @@ private:
     uint16_t dns_client_port_;
     uint32_t dns_timeout_;
     uint32_t dns_max_retries_;
+    std::string dns_def_resolv_file_;
     uint16_t mirror_client_port_;
     Ip4Address mgmt_ip_;
     HypervisorMode hypervisor_mode_;
@@ -701,6 +708,7 @@ private:
     boost::property_tree::ptree tree_;
     std::auto_ptr<VirtualGatewayConfigTable> vgw_config_table_;
     bool dhcp_relay_mode_;
+    bool disable_stats_collection_;
     bool xmpp_auth_enable_;
     std::string xmpp_server_cert_;
     std::string xmpp_server_key_;

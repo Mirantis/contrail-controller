@@ -94,7 +94,7 @@ CONTRAIL_SERVICES = {'compute' : {'sysv' : ['supervisor-vrouter'],
 # This is added for support service, we need give the customer module for support service
 CONTRAIL_SUPPORT_SERVICES_NODETYPE = { 'redis-server' : ['webui', 'analytics'],
                                'rabbitmq-server' : ['config'],
-                               'zookeeper' : ['config']
+                               'zookeeper' : ['config', 'database']
                             }
 
 SHOW_IF_DISABLED = {
@@ -250,20 +250,21 @@ class IntrospectUtil(object):
     #end _mk_url_str
 
     def _load(self, path):
+        resp = None
         url = self._mk_url_str(path)
         try:
             resp = requests.get(url, timeout=self._timeout)
         except requests.ConnectionError:
             url = self._mk_url_str(path, True)
-            resp = requests.get(url, timeout=self._timeout, verify=\
-                    self._cacert, cert=(self._certfile, self._keyfile))
-        if resp.status_code == requests.codes.ok:
-            return etree.fromstring(resp.text)
-        else:
+            resp = requests.get(url, timeout=self._timeout,
+                                verify=self._cacert,
+                                cert=(self._certfile, self._keyfile))
+        if resp.status_code != requests.codes.ok:
             if self._debug:
                 print 'URL: %s : HTTP error: %s' % (url, str(resp.status_code))
             return None
 
+        return etree.fromstring(resp.text)
     #end _load
 
     def get_uve(self, tname):
@@ -553,7 +554,7 @@ def get_svc_uve_info(svc_name, svc_status, debug, detail, timeout, keyfile,
             svc_uve_status, svc_uve_description = \
                 get_svc_uve_status(svc_name, debug, timeout, keyfile,\
                                    certfile, cacert)
-        except requests.ConnectionError, e:
+        except (requests.ConnectionError, IOError), e:
             if debug:
                 print 'Socket Connection error : %s' % (str(e))
             svc_uve_status = "connection-error"
@@ -664,10 +665,7 @@ def check_status(svc_name, options):
 install_service = []
 def service_check_customer(svc):
     if svc in CONTRAIL_SUPPORT_SERVICES_NODETYPE.keys():
-        for customer in CONTRAIL_SUPPORT_SERVICES_NODETYPE[svc]:
-            if customer not in install_service:
-                return False
-    return True
+        return bool(set(install_service) & set(CONTRAIL_SUPPORT_SERVICES_NODETYPE[svc]))
 # end service_check_customer
 
 def contrail_service_status(nodetype, options):
@@ -847,7 +845,7 @@ def main():
     if kubemanager:
         contrail_service_status('kubemanager', options)
 
-    if capi:
+    if capi or database or analytics:
         if init in ['systemd']:
             contrail_service_status('support-service', options)
         else:

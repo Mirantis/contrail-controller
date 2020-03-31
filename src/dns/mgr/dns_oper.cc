@@ -660,6 +660,7 @@ bool VirtualDnsRecordConfig::GetObject(IFMapNode *node, DnsItem &item) {
     item.data = rec_data.record_data;
     item.ttl = rec_data.record_ttl_seconds;
     item.priority = rec_data.record_mx_preference;
+    item.source_name = rec_data.record_source_name;
     return true;
 }
 
@@ -680,6 +681,7 @@ void VirtualDnsRecordConfig::VirtualDnsRecordTrace(VirtualDnsRecordTraceData &re
     else
         rec.installed = "false";
     rec.flags = flags_;
+    rec.rec_source_name = rec_.source_name;
 }
 
 void VirtualDnsRecordConfig::Trace(const std::string &ev) {
