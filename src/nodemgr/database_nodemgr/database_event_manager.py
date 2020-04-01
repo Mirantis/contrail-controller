@@ -90,6 +90,17 @@ class DatabaseEventManager(EventManager):
         self.third_party_process_dict["zookeeper"] = "org.apache.zookeeper.server.quorum.QuorumPeerMain"
     # end __init__
 
+    def _get_cassandra_config_option(self, config):
+        (linux_dist, x, y) = platform.linux_distribution()
+        if (linux_dist in ['Ubuntu', 'debian']):
+            yamlstream = open("/etc/cassandra/cassandra.yaml", 'r')
+        else:
+            yamlstream = open("/etc/cassandra/conf/cassandra.yaml", 'r')
+
+        cfg = yaml.safe_load(yamlstream)
+        yamlstream.close()
+        return cfg[config]
+
     def msg_log(self, msg, level):
         self.sandesh_global.logger().log(SandeshLogger.get_py_logger_level(
                             level), msg)
@@ -154,7 +165,7 @@ class DatabaseEventManager(EventManager):
             self.listener_nodemgr.ok(self.stdout)
 
     def get_package_name(self):
-        return self.node_type + '-common'
+        return self.node_type
 
     def process(self):
         self.cassandra_mgr.process(self)
