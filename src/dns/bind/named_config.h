@@ -70,9 +70,11 @@ public:
                 const std::string& named_log_file,
                 const std::string& rndc_config_file,
                 const std::string& rndc_secret,
-                const std::string& named_max_cache_size) :
+                const std::string& named_max_cache_size,
+                const std::string& resolv_conf_file) :
         file_(), named_log_file_(named_log_file), rndc_secret_(rndc_secret),
         named_max_cache_size_(named_max_cache_size),
+        resolv_conf_file_(resolv_conf_file),
         reset_flag_(false), all_zone_files_(false) {
             named_config_dir_ = named_config_dir + "/";
             named_config_file_ = named_config_dir_ + named_config_file;
@@ -86,7 +88,8 @@ public:
                      const std::string& named_log_file,
                      const std::string& rndc_config_file,
                      const std::string& rndc_secret,
-                     const std::string& named_max_cache_size);
+                     const std::string& named_max_cache_size,
+                     const std::string& resolv_conf_file);
     static void Shutdown();
     void Reset();
     virtual void AddView(const VirtualDnsConfig *vdns);
@@ -102,7 +105,7 @@ public:
                                         const std::string &name);
     virtual std::string GetZoneFilePath(const std::string &vdns, 
                                         const std::string &name);
-    virtual std::string GetResolveFile() { return "/etc/resolv.conf"; }
+    virtual std::string GetResolveFile() { return resolv_conf_file_; }
     std::string GetPidFilePath();
     std::string GetSessionKeyFilePath();
     const std::string &named_config_dir() const { return named_config_dir_; }
@@ -141,6 +144,7 @@ protected:
     std::string rndc_secret_;
     std::string named_max_cache_size_;
     std::string default_forwarders_;
+    std::string resolv_conf_file_;
     bool reset_flag_;
     bool all_zone_files_;
     static NamedConfig *singleton_;
