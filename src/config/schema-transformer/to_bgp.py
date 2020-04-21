@@ -407,10 +407,11 @@ class SchemaTransformer(object):
                 sc.destroy()
             if sc.present_stale:
                 sc.delete()
-            for rinst in RoutingInstanceST.values():
-                if rinst.stale_route_targets:
-                    rinst.update_route_target_list(
-                            rt_del=rinst.stale_route_targets)
+            # TODO(aignatov): PROD-35180 Commenting this to unlock upgrades ignoring stale sfc entries
+            # for rinst in RoutingInstanceST.values():
+            #     if rinst.stale_route_targets:
+            #         rinst.update_route_target_list(
+            #                 rt_del=rinst.stale_route_targets)
     # end process_stale_objects
 
     @classmethod
