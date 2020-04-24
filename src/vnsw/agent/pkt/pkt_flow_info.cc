@@ -339,8 +339,18 @@ static bool NhDecode(const Agent *agent, const NextHop *nh, const PktInfo *pkt,
         // ARP Nexthop means outgoing interface is gateway kind of interface with
         // ARP already resolved
     case NextHop::ARP: {
-        assert(info->l3_flow == true);
         const ArpNH *arp_nh = static_cast<const ArpNH *>(nh);
+        if (info->l3_flow != true) {
+            LOG(ERROR, "ARP NH found for L2 flow");
+            if (in->intf_) LOG(ERROR, "VM Interface type: " << in->intf_->type());
+            LOG(ERROR, "ARP NH ID: " << arp_nh->id());
+            LOG(ERROR, "Dropping packet, evaluating flow");
+            out->intf_ = NULL;
+            out->vrf_ = NULL;
+            ret = false;
+            break;
+        }
+        //assert(info->l3_flow == true);
         if (in->intf_->type() == Interface::VM_INTERFACE) {
             const VmInterface *vm_intf =
                 static_cast<const VmInterface *>(in->intf_);
