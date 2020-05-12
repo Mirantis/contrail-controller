@@ -15,6 +15,7 @@ utils_scripts = [
   'provision.py',
   'service-policy.py',
   'chmod.py',
+  'chmod2.py',
   'contrail',
   'contrail-version',
   'contrail-status.py',
@@ -30,6 +31,7 @@ utils_scripts = [
   'contrail_veth_port.py',
   'encap.py',
   'provision_forwarding_mode.py',
+  'provision_physical_device.py',
   'provision_vrouter.py',
   'vncop.py',
   'create_floating_pool.py',
@@ -47,6 +49,8 @@ utils_scripts = [
   'provision_user_defined_log_statistics.py',
   'provision_alarm.py',
   'contrail_alarm.py',
+  'service_appliance.py',
+  'service_appliance_set.py',
   'contrail-diff-docs.py',
   'provision_issu.py',
   'issu_process.sh',
@@ -55,6 +59,7 @@ utils_scripts = [
   'vnc_admin_api.py',
   'provision_global_vrouter_config.py',
   'chownproj.py',
+  'rbacutil.py',
 ]
 
 for utils in utils_scripts:
