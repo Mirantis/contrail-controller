@@ -21,7 +21,6 @@ import abc
 import six
 import uuid
 
-from cfgm_common import analytics_client
 from cfgm_common import svc_info
 from vnc_api.vnc_api import *
 from config_db import *
@@ -575,9 +574,14 @@ class InstanceManager(object):
                 vmi_obj.set_virtual_machine_interface_properties(if_properties)
                 vmi_updated = True
 
+        if ('port-security-enabled' in nic and nic['port-security-enabled'] !=
+                vmi_obj.get_port_security_enabled()):
+            vmi_obj.set_port_security_enabled(nic['port-security-enabled'])
+            vmi_updated = True
+
         if (st.params.get('service_mode') in ['in-network', 'in-network-nat'] and
                 proj_obj.name != 'default-project'):
-            if not vmi_sg:
+            if not vmi_sg and vmi_obj.get_port_security_enabled():
                 sg_obj = self._get_default_security_group(vn_obj)
                 if sg_obj:
                     vmi_obj.set_security_group(sg_obj)

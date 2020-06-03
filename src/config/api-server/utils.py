@@ -88,6 +88,7 @@ def parse_args(args_str):
         'object_cache_exclude_types': '', # csv of object types to *not* cache
         'db_engine': 'cassandra',
         'max_request_size': 1024000,
+        'disable_vnc_api_stats' : False,
     }
     defaults.update(SandeshConfig.get_default_options(['DEFAULTS']))
     # keystone options
@@ -108,6 +109,7 @@ def parse_args(args_str):
         'keyfile': '',
         'auth_type': 'password',
         'auth_url': '',
+        'keystone_sync_on_demand': True,
     }
     # cassandra options
     cassandraopts = {
@@ -136,8 +138,14 @@ def parse_args(args_str):
             if 'default_encoding' in config.options('DEFAULTS'):
                 default_encoding = config.get('DEFAULTS', 'default_encoding')
                 gen.resource_xsd.ExternalEncoding = default_encoding
+            if 'disable_vnc_api_stats' in config.options('DEFAULTS'):
+                defaults['disable_vnc_api_stats'] = config.getboolean(
+                    'DEFAULTS', 'disable_vnc_api_stats')
         if 'KEYSTONE' in config.sections():
             ksopts.update(dict(config.items("KEYSTONE")))
+            if 'keystone_sync_on_demand' in config.options('KEYSTONE'):
+                ksopts['keystone_sync_on_demand'] = config.getboolean(
+                    'KEYSTONE', 'keystone_sync_on_demand')
         if 'QUOTA' in config.sections():
             for (k, v) in config.items("QUOTA"):
                 try:
