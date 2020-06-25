@@ -123,6 +123,8 @@ env.Alias('install', env.InstallAs(env['INSTALL_INITD'] +
 env.Alias('install', env.InstallAs(env['INSTALL_SYSTEMD'] +
     '/contrail-api.service', 'systemd/contrail-api.service'))
 env.Alias('install', env.InstallAs(env['INSTALL_SYSTEMD'] +
+    '/contrail-api@.service', 'systemd/contrail-api@.service'))
+env.Alias('install', env.InstallAs(env['INSTALL_SYSTEMD'] +
     '/contrail-config-nodemgr.service', 'systemd/contrail-config-nodemgr.service'))
 env.Alias('install', env.Install(env['INSTALL_CONF'],
     'supervisord_config.conf'))

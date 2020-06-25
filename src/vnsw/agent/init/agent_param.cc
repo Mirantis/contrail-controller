@@ -447,6 +447,7 @@ void AgentParam::ParseDnsArguments
     GetOptValue<uint16_t>(var_map, dns_client_port_, "DNS.dns_client_port");
     GetOptValue<uint32_t>(var_map, dns_timeout_, "DNS.dns_timeout");
     GetOptValue<uint32_t>(var_map, dns_max_retries_, "DNS.dns_max_retries");
+    GetOptValue<string>(var_map, dns_def_resolv_file_, "DNS.resolv_conf_file");
 }
 
 void AgentParam::ParseNetworksArguments
@@ -613,6 +614,11 @@ void AgentParam::ParseFlowArguments
 void AgentParam::ParseDhcpRelayModeArguments
     (const boost::program_options::variables_map &var_map) {
     GetOptValue<bool>(var_map, dhcp_relay_mode_, "DEFAULT.dhcp_relay_mode");
+}
+
+void AgentParam::ParseStatsCollectionArguments
+    (const boost::program_options::variables_map &var_map) {
+    GetOptValue<bool>(var_map, disable_stats_collection_, "DEFAULT.disable_stats_collection");
 }
 
 void AgentParam::ParseSimulateEvpnTorArguments
@@ -804,6 +810,7 @@ void AgentParam::ProcessArguments() {
     ParseFlowArguments(var_map_);
     ParseMetadataProxyArguments(var_map_);
     ParseDhcpRelayModeArguments(var_map_);
+    ParseStatsCollectionArguments(var_map_);
     ParseServiceInstanceArguments(var_map_);
     ParseSimulateEvpnTorArguments(var_map_);
     ParseAgentInfoArguments(var_map_);
@@ -1135,6 +1142,7 @@ void AgentParam::LogConfig() const {
     LOG(DEBUG, "DNS client port             : " << dns_client_port_);
     LOG(DEBUG, "DNS timeout                 : " << dns_timeout_);
     LOG(DEBUG, "DNS max retries             : " << dns_max_retries_);
+    LOG(DEBUG, "DNS default nameserver file : " << dns_def_resolv_file_);
     LOG(DEBUG, "Xmpp Dns Authentication     : " << xmpp_dns_auth_enable_);
     if (xmpp_dns_auth_enable_) {
         LOG(DEBUG, "Xmpp Server Certificate : " << xmpp_server_cert_);
@@ -1204,6 +1212,7 @@ void AgentParam::LogConfig() const {
         LOG(DEBUG, "Gateway Mode                : None");
 
     LOG(DEBUG, "DHCP Relay Mode             : " << dhcp_relay_mode_);
+    LOG(DEBUG, "Stats Collection Disabled   : " << disable_stats_collection_);
     if (simulate_evpn_tor_) {
         LOG(DEBUG, "Simulate EVPN TOR           : " << simulate_evpn_tor_);
     }
@@ -1300,7 +1309,8 @@ AgentParam::AgentParam(bool enable_flow_options,
         agent_name_(), eth_port_(),
         eth_port_no_arp_(false), eth_port_encap_type_(),
         dns_client_port_(0), dns_timeout_(3000),
-        dns_max_retries_(2), mirror_client_port_(0),
+        dns_max_retries_(2), dns_def_resolv_file_("/etc/resolv.conf"),
+        mirror_client_port_(0),
         mgmt_ip_(), hypervisor_mode_(MODE_KVM), 
         xen_ll_(), tunnel_type_(), metadata_shared_secret_(),
         metadata_proxy_port_(0), metadata_use_ssl_(false),
@@ -1326,9 +1336,9 @@ AgentParam::AgentParam(bool enable_flow_options,
         vrouter_stats_interval_(kVrouterStatsInterval),
         vmware_physical_port_(""), test_mode_(false), tree_(),
         vgw_config_table_(new VirtualGatewayConfigTable() ),
-        dhcp_relay_mode_(false), xmpp_auth_enable_(false),
-        xmpp_server_cert_(""), xmpp_server_key_(""), xmpp_ca_cert_(""),
-        xmpp_dns_auth_enable_(false),
+        dhcp_relay_mode_(false), disable_stats_collection_(false),
+        xmpp_auth_enable_(false), xmpp_server_cert_(""), xmpp_server_key_(""),
+        xmpp_ca_cert_(""), xmpp_dns_auth_enable_(false),
         simulate_evpn_tor_(false), si_netns_command_(),
         si_docker_command_(), si_netns_workers_(0),
         si_netns_timeout_(0), si_lb_ssl_cert_path_(), si_lbaas_auth_conf_(),
@@ -1418,6 +1428,8 @@ AgentParam::AgentParam(bool enable_flow_options,
          "Hostname of compute-node")
         ("DEFAULT.dhcp_relay_mode", opt::bool_switch(&dhcp_relay_mode_),
          "Enable / Disable DHCP relay of DHCP packets from virtual instance")
+        ("DEFAULT.disable_stats_collection", opt::bool_switch(&disable_stats_collection_),
+         "Disable VMI and VN stats collection and sending to collector")
         ("DEFAULT.agent_name", opt::value<string>(),
          "Agent Name")
         ("DEFAULT.http_server_port",
@@ -1445,6 +1457,8 @@ AgentParam::AgentParam(bool enable_flow_options,
          "DNS Timeout")
         ("DNS.dns_max_retries", opt::value<uint32_t>()->default_value(2),
          "Dns Max Retries")
+        ("DNS.resolv_conf_file", opt::value<string>()->default_value("/etc/resolv.conf"),
+         "DNS default nameserver file")
         ("DNS.dns_client_port",
          opt::value<uint16_t>()->default_value(ContrailPorts::VrouterAgentDnsClientUdpPort()),
          "Dns client port")
