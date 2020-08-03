@@ -15,6 +15,7 @@ utils_scripts = [
   'provision.py',
   'service-policy.py',
   'chmod.py',
+  'chmod2.py',
   'contrail',
   'contrail-version',
   'contrail-status.py',
@@ -53,6 +54,7 @@ utils_scripts = [
   'provision_issu.py',
   'issu_process.sh',
   'qosmap.py',
+  'rbacutil.py',
   'chownproj.py',
 ]
 
