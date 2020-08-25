@@ -26,14 +26,6 @@ class CassLibrary {
         const char* username, const char* password) = 0;
     virtual CassError CassClusterSetNumThreadsIo(CassCluster* cluster,
         unsigned num_threads) = 0;
-    virtual CassError CassClusterSetPendingRequestsHighWaterMark(
-        CassCluster* cluster, unsigned num_requests) = 0;
-    virtual CassError CassClusterSetPendingRequestsLowWaterMark(
-        CassCluster* cluster, unsigned num_requests) = 0;
-    virtual CassError CassClusterSetWriteBytesHighWaterMark(
-        CassCluster* cluster, unsigned num_bytes) = 0;
-    virtual CassError CassClusterSetWriteBytesLowWaterMark(
-        CassCluster* cluster, unsigned num_bytes) = 0;
     virtual void CassClusterSetWhitelistFiltering(CassCluster* cluster,
         const char* hosts) = 0;
     virtual void CassClusterSetRequestTimeout(CassCluster* cluster,
@@ -182,14 +174,6 @@ class CassDatastaxLibrary : public CassLibrary {
         const char* username, const char* password);
     virtual CassError CassClusterSetNumThreadsIo(CassCluster* cluster,
         unsigned num_threads);
-    virtual CassError CassClusterSetPendingRequestsHighWaterMark(
-        CassCluster* cluster, unsigned num_requests);
-    virtual CassError CassClusterSetPendingRequestsLowWaterMark(
-        CassCluster* cluster, unsigned num_requests);
-    virtual CassError CassClusterSetWriteBytesHighWaterMark(
-        CassCluster* cluster, unsigned num_bytes);
-    virtual CassError CassClusterSetWriteBytesLowWaterMark(
-        CassCluster* cluster, unsigned num_bytes);
     virtual void CassClusterSetWhitelistFiltering(CassCluster* cluster,
         const char* hosts);
     virtual void CassClusterSetRequestTimeout(CassCluster* cluster,

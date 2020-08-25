@@ -1037,7 +1037,11 @@ class VncApi(object):
             elif status == 403:
                 raise PermissionDenied(content)
             elif status == 412:
-                raise OverQuota(content)
+                try:
+                    from neutron_lib.exceptions import OverQuota
+                    raise OverQuota(overs=content)
+                except ImportError:
+                    raise OverQuota(content)
             elif status == 409:
                 raise RefsExistError(content)
             elif status == 413:
