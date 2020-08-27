@@ -52,6 +52,8 @@ DELETE = 5
 _IFACE_ROUTE_TABLE_NAME_PREFIX = 'NEUTRON_IFACE_RT'
 _IFACE_ROUTE_TABLE_NAME_PREFIX_REGEX = re.compile(
     '%s_%s_%s' % (_IFACE_ROUTE_TABLE_NAME_PREFIX, UUID_PATTERN, UUID_PATTERN))
+# Security group
+_NEUTRON_DEFAULT_SECURITY_GROUP_NAME = 'default'
 
 # VNC to neutron resource type
 _RESOURCE_VNC_TO_NEUTRON = {'virtual_network':
@@ -385,9 +387,8 @@ class DBInterface(object):
     # end _ensure_instance_exists
 
     def _ensure_default_security_group_exists(self, proj_id):
-        proj_id = str(uuid.UUID(proj_id))
-        proj_obj = self._vnc_lib.project_read(id=proj_id, fields=['security_groups'])
-        vnc_openstack.ensure_default_security_group(self._vnc_lib, proj_obj)
+        vnc_openstack.ensure_default_security_group(self._vnc_lib,
+                                                    str(uuid.UUID(proj_id)))
     # end _ensure_default_security_group_exists
 
     def _get_obj_tenant_id(self, q_type, obj_uuid):

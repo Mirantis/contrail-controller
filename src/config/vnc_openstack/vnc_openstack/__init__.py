@@ -37,6 +37,7 @@ from vnc_api.gen.resource_common import *
 import neutron_plugin_interface as npi
 from context import use_context
 from neutron_plugin_db import DBInterface as npd
+from neutron_plugin_db import _NEUTRON_DEFAULT_SECURITY_GROUP_NAME
 
 Q_CREATE = 'create'
 Q_DELETE = 'delete'
@@ -162,12 +163,12 @@ def fill_keystone_opts(obj, conf_sections):
     except ConfigParser.NoOptionError:
         obj._endpoint_type = None
 
-def _create_default_security_group(vnc_lib, proj_obj):
+def _create_default_security_group(vnc_lib, project_fq_name, project_id):
     def _get_rule(ingress, sg, prefix, ethertype):
         sgr_uuid = str(uuid.uuid4())
         if sg:
             addr = AddressType(
-                security_group=proj_obj.get_fq_name_str() + ':' + sg)
+                security_group=':'.join(project_fq_name) + ':' + sg)
         elif prefix:
             addr = AddressType(subnet=SubnetType(prefix, 0))
         local_addr = AddressType(security_group='local')
@@ -195,26 +196,33 @@ def _create_default_security_group(vnc_lib, proj_obj):
     # create security group
     id_perms = IdPermsType(enable=True,
                            description=DEFAULT_SECGROUP_DESCRIPTION)
-    sg_obj = vnc_api.SecurityGroup(name='default', parent_obj=proj_obj,
+    sg_obj = vnc_api.SecurityGroup(name=_NEUTRON_DEFAULT_SECURITY_GROUP_NAME,
+                                   parent_type='project',
+                                   fq_name=project_fq_name + [_NEUTRON_DEFAULT_SECURITY_GROUP_NAME],
                                    id_perms=id_perms,
+                                   perms2=PermType2(owner=project_id),
                                    security_group_entries=sg_rules)
 
     vnc_lib.security_group_create(sg_obj)
-    # neutron doesn't propagate user token
-    vnc_lib.chown(sg_obj.get_uuid(), proj_obj.get_uuid())
 
 
-def ensure_default_security_group(vnc_lib, proj_obj):
-    sg_groups = proj_obj.get_security_groups()
-    for sg_group in sg_groups or []:
-        if sg_group['to'][-1] == 'default':
-            return
+def ensure_default_security_group(vnc_lib, proj_id):
     try:
-        _create_default_security_group(vnc_lib, proj_obj)
-    except vnc_api.RefsExistError:
-        # Created by different worker/node
-        # so we can ignore the RefsExistError exception
-        pass
+        project_fq_name = vnc_lib.id_to_fq_name(proj_id)
+    except vnc_api.NoIdError:
+        return
+
+    try:
+        vnc_lib.fq_name_to_id(
+            'security-group',
+            project_fq_name + [_NEUTRON_DEFAULT_SECURITY_GROUP_NAME])
+    except vnc_api.NoIdError:
+        try:
+            _create_default_security_group(vnc_lib, project_fq_name, proj_id)
+        except vnc_api.RefsExistError:
+            # Created by different worker/node
+            # so we can ignore the RefsExistError exception
+            pass
 
 
 openstack_driver = None
@@ -908,7 +916,7 @@ class ResourceApiDriver(vnc_plugin_base.ResourceApi):
 
     def _create_default_security_group(self, proj_dict):
         proj_obj = vnc_api.Project.from_dict(**proj_dict)
-        ensure_default_security_group(self._vnc_lib, proj_obj)
+        ensure_default_security_group(self._vnc_lib, proj_obj.uuid)
     # end _create_default_security_group
 
     def wait_for_api_server_connection(func):
