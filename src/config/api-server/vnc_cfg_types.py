@@ -4341,10 +4341,6 @@ class ProjectServer(Resource, Project):
                                                          obj_dict['fq_name'])
 
     @classmethod
-    def pre_dbe_read(cls, id, fq_name, db_conn):
-        return cls.ensure_default_application_policy_set(id, fq_name)
-
-    @classmethod
     def pre_dbe_delete(cls, id, obj_dict, db_conn):
         defaut_aps_fq_name = obj_dict['fq_name'] +\
             ['default-%s' % ApplicationPolicySetServer.resource_type]
