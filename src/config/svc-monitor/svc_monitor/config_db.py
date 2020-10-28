@@ -26,9 +26,12 @@ class LoadbalancerSM(DBBaseSM):
 
     def __init__(self, uuid, obj_dict=None):
         self.uuid = uuid
+        self.device_owner = None
         self.virtual_machine_interface = None
         self.service_instance = None
         self.loadbalancer_listeners = set()
+        self.instance_ips = []
+        self.floating_ips = []
         self.last_sent = None
         self.update(obj_dict)
     # end __init__
@@ -46,6 +49,9 @@ class LoadbalancerSM(DBBaseSM):
         self.update_single_ref('virtual_machine_interface', obj)
         self.update_single_ref('service_instance', obj)
         self.update_multiple_refs('loadbalancer_listener', obj)
+        if self.virtual_machine_interface:
+            vmi_obj = VirtualMachineInterfaceSM(self.virtual_machine_interface)
+            self.device_owner = vmi_obj.device_owner
     # end update
 
     def add(self):
@@ -132,6 +138,11 @@ class LoadbalancerPoolSM(DBBaseSM):
         self.loadbalancer_version = "v1"
         self.last_sent = None
         self.custom_attributes = []
+        self.lb_fips = {}
+        self.lb_instance_ips = []
+        self.lb_floating_ips = []
+        self.member_vmis = {}
+        self.listener_port = 0
         self.update(obj_dict)
     # end __init__
 
@@ -142,6 +153,7 @@ class LoadbalancerPoolSM(DBBaseSM):
         self.fq_name = obj['fq_name']
         self.params = obj.get('loadbalancer_pool_properties', None)
         self.provider = obj.get('loadbalancer_pool_provider', None)
+        self.annotations = obj.get('annotations', None)
         kvpairs = obj.get('loadbalancer_pool_custom_attributes', None)
         if kvpairs:
             self.custom_attributes = kvpairs.get('key_value_pair', [])
@@ -160,6 +172,7 @@ class LoadbalancerPoolSM(DBBaseSM):
     def add(self):
         if self.loadbalancer_listener:
             ll_obj = LoadbalancerListenerSM.get(self.loadbalancer_listener)
+            self.listener_port = ll_obj.params['protocol_port']
             self.loadbalancer_id = ll_obj.loadbalancer
             self.loadbalancer_version = "v2"
 
@@ -206,6 +219,7 @@ class LoadbalancerMemberSM(DBBaseSM):
 
     def __init__(self, uuid, obj_dict=None):
         self.uuid = uuid
+        self.vmi = None
         self.loadbalancer_pool = {}
         self.last_sent = None
         self.update(obj_dict)
@@ -222,6 +236,12 @@ class LoadbalancerMemberSM(DBBaseSM):
         self.params = obj.get('loadbalancer_member_properties', None)
         self.loadbalancer_pool = self.get_parent_uuid(obj)
         self.id_perms = obj.get('id_perms', None)
+        annotations = obj.get('annotations', None)
+        if annotations:
+            for kvp in annotations['key_value_pair'] or []:
+                if kvp['key'] == 'vmi':
+                    self.vmi = kvp['value']
+                    break
     # end update
 
     def evaluate(self):
@@ -428,6 +448,7 @@ class VirtualMachineInterfaceSM(DBBaseSM):
 
     def __init__(self, uuid, obj_dict=None):
         self.uuid = uuid
+        self.device_owner = None
         self.params = None
         self.if_type = None
         self.virtual_ip = None
@@ -458,6 +479,7 @@ class VirtualMachineInterfaceSM(DBBaseSM):
             obj = self.read_obj(self.uuid)
         self.name = obj['fq_name'][-1]
         self.fq_name = obj['fq_name']
+        self.device_owner = obj.get('virtual_machine_interface_device_owner')
         if obj.get('virtual_machine_interface_properties', None):
             self.params = obj['virtual_machine_interface_properties']
             self.if_type = self.params.get('service_interface_type', None)

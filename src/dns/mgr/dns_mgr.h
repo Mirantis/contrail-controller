@@ -61,6 +61,7 @@ public:
                     const std::string& rndc_config_file,
                     const std::string& rndc_secret,
                     const std::string& named_max_cache_size,
+                    const std::string& resolv_conf_file,
                     const uint16_t named_max_retransmissions,
                     const uint16_t named_retransmission_interval);
     void Shutdown();
