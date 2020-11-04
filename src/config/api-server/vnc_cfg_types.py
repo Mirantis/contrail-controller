@@ -21,8 +21,7 @@ import netaddr
 import uuid
 import vnc_quota
 from vnc_quota import QuotaHelper
-from provision_defaults import PERMS_RWX
-from provision_defaults import PERMS_RX
+from provision_defaults import PERMS_NONE, PERMS_RX, PERMS_RWX
 
 from context import get_context
 from context import is_internal_request
@@ -2939,19 +2938,38 @@ class VirtualNetworkServer(Resource, VirtualNetwork):
         except KeyError:
             global_access = None
         is_shared = obj_dict.get('is_shared')
-        if global_access is not None or is_shared is not None:
+        router_external = obj_dict.get('router_external')
+        if global_access is not None or is_shared is not None or \
+           router_external is not None:
             if global_access is not None and is_shared is not None:
-                if is_shared != (global_access != 0):
-                    error = "Inconsistent is_shared (%s a) and global_access (%s)" % (is_shared, global_access)
-                    return (False, (400, error))
+                # NOTE(gzimin): Check router_external parameter too.
+                if is_shared != (global_access == 7) and \
+                   (router_external is None or not router_external):
+                    msg = ("Inconsistent is_shared (%s) and global_access (%s)"
+                           % (is_shared, global_access))
+                    return False, (400, msg)
+            if global_access is not None and router_external is not None:
+                # NOTE(gzimin): Check is_shared parameter too.
+                if router_external != (global_access == 5) and \
+                   (is_shared is None or not is_shared):
+                    msg = ("Inconsistent router_external (%s) and "
+                           "global_access (%s)"
+                           % (router_external, global_access))
+                    return False, (400, msg)
             elif global_access is not None:
                 obj_dict['is_shared'] = (global_access != 0)
             else:
-                ok, result = cls.dbe_read(db_conn, 'virtual_network', id, obj_fields=['perms2'])
+                ok, result = cls.dbe_read(db_conn, 'virtual_network', id,
+                                          obj_fields=['perms2'])
                 if not ok:
                     return ok, result
                 obj_dict['perms2'] = result['perms2']
-                obj_dict['perms2']['global_access'] = PERMS_RWX if is_shared else 0
+                if is_shared:
+                    obj_dict['perms2']['global_access'] = PERMS_RWX
+                elif router_external:
+                    obj_dict['perms2']['global_access'] = PERMS_RX
+                else:
+                    obj_dict['perms2']['global_access'] = PERMS_NONE
 
         ok, error =  cls._check_route_targets(obj_dict, db_conn)
         if not ok:
@@ -4323,10 +4341,6 @@ class ProjectServer(Resource, Project):
                                                          obj_dict['fq_name'])
 
     @classmethod
-    def pre_dbe_read(cls, id, fq_name, db_conn):
-        return cls.ensure_default_application_policy_set(id, fq_name)
-
-    @classmethod
     def pre_dbe_delete(cls, id, obj_dict, db_conn):
         defaut_aps_fq_name = obj_dict['fq_name'] +\
             ['default-%s' % ApplicationPolicySetServer.resource_type]
@@ -4377,7 +4391,7 @@ class ProjectServer(Resource, Project):
     def dbe_delete_notification(cls, obj_ids, obj_dict):
         quota_counter = cls.server.quota_counter
         for obj_type in obj_dict.get('quota', {}).keys():
-            path_prefix = _DEFAULT_ZK_COUNTER_PATH_PREFIX + obj_ids['uuid']
+            path_prefix = _DEFAULT_ZK_COUNTER_PATH_PREFIX + obj_ids
             path = path_prefix + "/" + obj_type
             if quota_counter.get(path):
                 # free the counter from cache
