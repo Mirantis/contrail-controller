@@ -76,7 +76,7 @@ void ContrailAgentInit::CreateModules() {
                 AgentUveBase::kIncrementalInterval));
     agent()->set_uve(uve_.get());
 
-    if (agent()->tsn_enabled() == false) {
+    if (!agent_param()->stats_collection_disabled() && !agent()->tsn_enabled()) {
         stats_collector_.reset(new AgentStatsCollector
                                    (*(agent()->event_manager()->io_service()),
                                     agent()));
