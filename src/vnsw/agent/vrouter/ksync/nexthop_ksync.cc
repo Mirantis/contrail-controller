@@ -207,7 +207,7 @@ NHKSyncEntry::NHKSyncEntry(NHKSyncObject *obj, const NextHop *nh) :
     }
 
     default:
-        assert(0);
+        LOG(ERROR, "Invalid NextHop detected in NHKSyncEntry::NHKSyncEntry");
         break;
     }
 }
