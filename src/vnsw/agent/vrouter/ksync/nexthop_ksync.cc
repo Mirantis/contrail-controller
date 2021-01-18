@@ -207,7 +207,7 @@ NHKSyncEntry::NHKSyncEntry(NHKSyncObject *obj, const NextHop *nh) :
     }
 
     default:
-        assert(0);
+        LOG(ERROR, "Invalid NextHop detected in NHKSyncEntry::NHKSyncEntry");
         break;
     }
 }
@@ -568,8 +568,41 @@ bool NHKSyncEntry::Sync(DBEntry *e) {
 
         KSyncEntryPtr interface = NULL;
         MacAddress dmac;
+        const NextHop *active_nh;
         const TunnelNH *tun_nh = static_cast<TunnelNH *>(e);
-        const NextHop *active_nh = tun_nh->GetRt()->GetActiveNextHop();
+        const AgentRoute *agent_rt = tun_nh->GetRt();
+        active_nh = agent_rt->GetActiveNextHop();
+
+        // if there is no active path/NH for defined route, try to fetch it via inet4
+        // unicast table first via LPM
+        if (!active_nh) {
+            InetUnicastAgentRouteTable *rt_table =
+                (tun_nh->GetVrf()->GetInet4UnicastRouteTable());
+            if (!rt_table) {
+                valid_ = false;
+                dmac_.Zero();
+                ret = true;
+                break;
+            }
+            const IpAddress tun_ip = *tun_nh->GetDip();
+            InetUnicastRouteEntry *rt = rt_table->FindLPM(tun_ip);
+            if (rt)
+                active_nh = rt->GetActiveNextHop();
+        }
+        // If there is still no active path for route, evaluate all NHs/paths for it
+        if (!active_nh) {
+            // Sync route, check if it's still there
+            if (const_cast<AgentRoute *>(agent_rt)->Sync()) {
+                active_nh = agent_rt->GetActiveNextHop();
+            }
+        }
+        // no active NH for route, return here
+        if (!active_nh) {
+            ret = true;
+            valid_ = false;
+            dmac_.Zero();
+            break;
+        }
         if (active_nh->GetType() == NextHop::ARP) {
             const ArpNH *arp_nh = static_cast<const ArpNH *>(active_nh);
             InterfaceKSyncObject *interface_object =

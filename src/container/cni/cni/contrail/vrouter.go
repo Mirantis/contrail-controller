@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -26,7 +27,7 @@ import (
 const VROUTER_AGENT_IP = "127.0.0.1"
 const VROUTER_AGENT_PORT = 9091
 const VROUTER_POLL_TIMEOUT = 3
-const VROUTER_POLL_RETRIES = 20
+const VROUTER_POLL_RETRIES = 10
 
 //Directory containing configuration for the container
 const VROUTER_CONFIG_DIR = "/var/lib/contrail/ports/vm"
@@ -46,6 +47,37 @@ type VRouter struct {
 
 type vrouterJson struct {
 	VRouter VRouter `json:"contrail"`
+}
+
+func (vrouter *VRouter) getVmIDFromPortList(containerId string) string {
+	vrouter.containerId = containerId
+	files, err := ioutil.ReadDir(vrouter.Dir)
+	if err != nil {
+		log.Errorf("Cannot walk trought %s Error: %s", vrouter.Dir, err)
+	}
+	for _, file := range files {
+		if file.Mode().IsDir() {
+			continue
+		}
+		fullpath := vrouter.Dir + "/" + file.Name()
+		data, err := ioutil.ReadFile(fullpath)
+		if err != nil {
+			log.Errorf("Cannot read file %s Error: %s", fullpath, err)
+			continue
+		}
+
+		//need to check for file type to detect filter off non-text files
+		fileType := http.DetectContentType(data)
+		if strings.Index(fileType, "text") == -1 {
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.Index(line, vrouter.containerId) > -1 {
+				return file.Name()
+			}
+		}
+	}
+	return ""
 }
 
 // Make filename to store config
@@ -278,6 +310,7 @@ func (vrouter *VRouter) Add(containerName, containerUuid, containerVn,
 		err := vrouter.addVmToAgent(addMsg)
 		if err != nil {
 			log.Errorf("Error in Add to VRouter")
+			vrouter.delVmFile()
 			return nil, err
 		}
 	}
@@ -285,7 +318,11 @@ func (vrouter *VRouter) Add(containerName, containerUuid, containerVn,
 	result, poll_err := vrouter.PollUrl("/vm")
 	if poll_err != nil {
 		log.Errorf("Error in polling VRouter")
-		return nil, poll_err
+		vrouter.delVmFile()
+		if updateAgent == true {
+			vrouter.delVmToAgent()
+			return nil, poll_err
+		}
 	}
 
 	return result, nil
