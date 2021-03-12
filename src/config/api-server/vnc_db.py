@@ -756,11 +756,15 @@ class VncDbClient(object):
 
         self._zk_db.master_election("/api-server-election", cassandra_client_init)
 
+        health_check_interval = api_svr_mgr.get_rabbit_health_check_interval()
+        if api_svr_mgr.get_worker_id() > 0:
+            health_check_interval = 0.0
+
         self._msgbus = VncServerKombuClient(self, rabbit_servers,
             rabbit_port, self._ifmap_db,
             rabbit_user, rabbit_password,
             rabbit_vhost, rabbit_ha_mode,
-            api_svr_mgr.get_rabbit_health_check_interval(),
+            health_check_interval,
             api_svr_mgr.get_worker_id(),
             **kwargs)
     # end __init__
