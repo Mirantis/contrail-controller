@@ -69,11 +69,12 @@ void DnsManager::Initialize(DB *config_db, DBGraph *config_graph,
                             const std::string& rndc_config_file,
                             const std::string& rndc_secret,
                             const std::string& named_max_cache_size,
+                            const std::string& resolv_conf_file,
                             const uint16_t named_max_retransmissions,
                             const uint16_t named_retranmission_interval) {
     NamedConfig::Init(named_config_dir, named_config_file,
                       named_log_file, rndc_config_file, rndc_secret,
-                      named_max_cache_size);
+                      named_max_cache_size, resolv_conf_file);
     config_mgr_.Initialize(config_db, config_graph);
     named_max_retransmissions_ = named_max_retransmissions;
     named_retransmission_interval_ = named_retranmission_interval;

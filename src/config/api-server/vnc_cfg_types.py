@@ -760,6 +760,7 @@ class VirtualMachineInterfaceServer(Resource, VirtualMachineInterface):
     portbindings['VIF_TYPE_HW_VEB'] = 'hw_veb'
     portbindings['VNIC_TYPE_NORMAL'] = 'normal'
     portbindings['VNIC_TYPE_DIRECT'] = 'direct'
+    portbindings['VNIC_TYPE_BAREMETAL'] = 'baremetal'
     portbindings['PORT_FILTER'] = True
     portbindings['VIF_TYPE_VHOST_USER'] = 'vhostuser'
     portbindings['VHOST_USER_MODE'] = 'vhostuser_mode'
@@ -1154,7 +1155,7 @@ class VirtualMachineInterfaceServer(Resource, VirtualMachineInterface):
             kvp_dict = cls._kvp_to_dict(kvps)
             new_vnic_type = kvp_dict.get('vnic_type', old_vnic_type)
             if (old_vnic_type != new_vnic_type):
-                if cls._is_port_bound(read_result):
+                if cls._is_port_bound(read_result, kvp_dict):
                     return (False, (409, "Vnic_type can not be modified when "
                                     "port is linked to Vrouter or VM."))
 
@@ -1262,6 +1263,7 @@ class ServiceApplianceSetServer(Resource, ServiceApplianceSet):
 # end class ServiceApplianceSetServer
 
 class VirtualNetworkServer(Resource, VirtualNetwork):
+    rpf_default = None
 
     @classmethod
     def _check_route_targets(cls, obj_dict, db_conn):
@@ -1516,6 +1518,18 @@ class VirtualNetworkServer(Resource, VirtualNetwork):
                 return True, ""
             get_context().push_undo(undo_vn_id)
             obj_dict['virtual_network_network_id'] = vn_id + 1
+
+        # Changing RPF default if configured
+        if cls.rpf_default is not None:
+            vnp = obj_dict.get('virtual_network_properties')
+            if vnp is None:
+                vnp = {'rpf': cls.rpf_default}
+            else:
+                rpf = vnp.get('rpf')
+                if rpf is None:
+                    vnp['rpf'] = cls.rpf_default
+            obj_dict['virtual_network_properties'] = vnp
+
 
         vn_uuid = obj_dict.get('uuid')
         (ok, return_code, result) = cls._check_ipam_network_subnets(obj_dict,

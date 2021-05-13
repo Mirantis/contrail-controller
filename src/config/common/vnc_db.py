@@ -338,6 +338,13 @@ class DBBase(object):
                 continue
             self.update_refs(field, self.obj)
             changed.append(field)
+        for field in self.ref_fields or []:
+            old_field = getattr(old_obj, field+'_back_refs', None)
+            new_field = getattr(self.obj, field+'_back_refs', None)
+            if compare_refs(old_field, new_field):
+                continue
+            self.update_refs(field, self.obj)
+            changed.append(field)
         for field in self.prop_fields or []:
             old_field = getattr(old_obj, field, None)
             new_field = getattr(self.obj, field, None)
